@@ -1,0 +1,28 @@
+# macOS
+.DS_Store
+
+# Xcode
+DerivedData/
+build/
+xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# 金鑰與憑證
+.env
+.env.*
+Secrets.xcconfig
+*.p8
+*.p12
+*.mobileprovision
+
+# 第三方商品照，僅供本機參考（見 ADR 0004）
+docs/characters/reference/plush-01.jpg
+
+# Claude Code 個人設定
+.claude/settings.local.json
+.claude/worktrees/
