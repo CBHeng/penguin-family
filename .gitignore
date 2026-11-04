@@ -18,6 +18,8 @@ xcuserdata/
 Secrets.xcconfig
 *.p8
 *.p12
+*.pem
+*.key
 *.mobileprovision
 
 # 第三方商品照，僅供本機參考（見 ADR 0004）
