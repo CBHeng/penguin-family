@@ -21,7 +21,9 @@ A 是箱庭生活，App 不接 AI；B 是聊天靈魂，App 開始接 AI。
 
 ## 現在輪到你
 
-- [ ] 安裝 Xcode（2026-11-04 檢查：這台 Mac 只有 Command Line Tools，還沒有 Xcode）
+- [x] 安裝 Xcode（2026-11-04 檢查：Xcode 26.6 已在 `/Applications`）
+- [x] 同意 Xcode 授權條款，並讓指令列改用 Xcode（2026-11-04 檢查：`xcodebuild` 正常，有 iOS 26.5 SDK）
+- [x] 下載 iOS 模擬器（2026-11-04 檢查：iOS 26.5 已就緒）
 - [ ] 準備一台實機 iPhone
 - [ ] 自己拍兩隻玩偶的多角度照片
 - [ ] 決定何時開始 A0
