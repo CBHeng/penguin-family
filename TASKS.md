@@ -25,7 +25,7 @@ A 是箱庭生活，App 不接 AI；B 是聊天靈魂，App 開始接 AI。
 - [x] 同意 Xcode 授權條款，並讓指令列改用 Xcode（2026-11-04 檢查：`xcodebuild` 正常，有 iOS 26.5 SDK）
 - [x] 下載 iOS 模擬器（2026-11-04 檢查：iOS 26.5 已就緒）
 - [ ] 準備一台實機 iPhone
-- [ ] 自己拍兩隻玩偶的多角度照片
+- [ ] 自己拍兩隻玩偶的多角度照片，放進 `docs/characters/reference/`（不進 git，要自己備份）
 - [ ] 決定何時開始 A0
 
 ## A0 工作清單
@@ -47,7 +47,7 @@ A 是箱庭生活，App 不接 AI；B 是聊天靈魂，App 開始接 AI。
 ## 之後要你準備的
 
 **A1 開始前**
-- [ ] 兩隻玩偶的名字、各自的個性與差異（填入[角色聖經](docs/characters/bible.md)）
+- [ ] 兩隻玩偶的名字、各自的個性與差異（複製[角色聖經範本](docs/characters/bible.md)到 `docs/characters/private/bible.md` 再填，不要填在範本上，範本是公開的）
 - [ ] 30～50 句真實講過的話或情境
 
 **A1 期間**
@@ -59,6 +59,9 @@ A 是箱庭生活，App 不接 AI；B 是聊天靈魂，App 開始接 AI。
 |---|---|
 | 有空時 | `penguin-family` 是正式 App 名稱，還是開發代號 |
 | 有空時 | Xcode 專案與程式要沿用 `Penguin`，還是改成 `PenguinFamily`（S2 建專案前決定最省事） |
+| 拍照前 | 不進 git 的照片、模型、角色聖經與台詞要備份到哪裡（例如另開私有 repo 或 iCloud） |
+| 有空時 | commit 裡的 email 是公開的：是否改用 GitHub 的 noreply 信箱 |
+| 有空時 | 公開 repo 目前沒有授權條款（LICENSE）：是否要加 |
 | 有空時 | 看過我加的底線是否同意：[語氣底線](.claude/rules/character-voice.md)、[安全與隱私底線](.claude/rules/safety-privacy.md) |
 | S2 卡住時 | 是否改用 Unity |
 | A2 發送前 | 玩偶造型：改為原創、取得授權，或了解風險後維持原樣（見 [ADR 0004](docs/adr/0004-plush-likeness-private-use.md)） |

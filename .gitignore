@@ -22,8 +22,11 @@ Secrets.xcconfig
 *.key
 *.mobileprovision
 
-# 第三方商品照，僅供本機參考（見 ADR 0004）
-docs/characters/reference/plush-01.jpg
+# 玩偶素材與作者的私人內容，不進公開 repo（見 ADR 0004）
+docs/characters/reference/
+docs/characters/private/
+Penguin/Resources/CharacterPacks/
+*.usdz
 
 # Claude Code 個人設定
 .claude/settings.local.json
