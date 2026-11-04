@@ -3,7 +3,7 @@
 - 專案名稱：penguin-family（企鵝陪伴 App）
 - 專案描述：iOS 2.5D 養成陪伴遊戲。把作者兩隻企鵝玩偶的**靈魂**做進 App：平常裝可愛、偶爾小腹黑，主人難過時可以抱抱或聊天。
 - 使用對象：作者與親友。目前不公開上架。
-- 目前進度與下一步：見 [docs/product/roadmap.md](docs/product/roadmap.md)。
+- 目前進度與下一步：見 [TASKS.md](TASKS.md)。
 
 ## 協作方式
 
@@ -27,7 +27,8 @@
 
 | 什麼時候 | 讀什麼 |
 |---|---|
-| 開工、回答下一步、回報進度 | [docs/product/roadmap.md](docs/product/roadmap.md) |
+| 回答下一步、回報進度、完成任務後更新 | [TASKS.md](TASKS.md) |
+| 開工、確認階段內容與驗收標準 | [docs/product/roadmap.md](docs/product/roadmap.md) |
 | 設計玩法、判斷某功能是否在範圍內 | [docs/product/vision.md](docs/product/vision.md) |
 | 新增模組、調整程式結構 | [docs/architecture.md](docs/architecture.md) |
 | 寫台詞、行為、人設提示 | [docs/characters/bible.md](docs/characters/bible.md)、[語氣底線](.claude/rules/character-voice.md) |
