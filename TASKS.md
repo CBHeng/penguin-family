@@ -25,7 +25,7 @@ A 是箱庭生活，App 不接 AI；B 是聊天靈魂，App 開始接 AI。
 - [x] 同意 Xcode 授權條款，並讓指令列改用 Xcode（2026-11-04 檢查：`xcodebuild` 正常，有 iOS 26.5 SDK）
 - [x] 下載 iOS 模擬器（2026-11-04 檢查：iOS 26.5 已就緒）
 - [ ] 準備一台實機 iPhone
-- [ ] 自己拍兩隻玩偶的多角度照片，放進 `penguin-family-assets/`（私有 repo，不進公開 repo）。2026-11-05：第一隻已換成 9 張去背 PNG，檢查過角度足夠，有 3 張要修去背；第二隻等第一隻外觀滿意後再補
+- [ ] 自己拍兩隻玩偶的多角度照片，放進 `penguin-family-assets/`（私有 repo `CBHeng/penguin-family-assets`，2026-11-07 已上傳）。2026-11-05：第一隻已換成 9 張去背 PNG，檢查過角度足夠，有 3 張要修去背；第二隻等第一隻外觀滿意後再補
 - [x] 決定何時開始 A0（2026-11-05：先開始 S1，先做第一隻）
 
 ## A0 工作清單
@@ -61,7 +61,6 @@ A 是箱庭生活，App 不接 AI；B 是聊天靈魂，App 開始接 AI。
 |---|---|
 | 有空時 | `penguin-family` 是正式 App 名稱，還是開發代號 |
 | 有空時 | Xcode 專案與程式要沿用 `Penguin`，還是改成 `PenguinFamily`（S2 建專案前決定最省事） |
-| 現在 | 把 `penguin-family-assets/` 上傳成 GitHub 私有 repo（2026-11-07 決定，由作者上傳） |
 | 有空時 | commit 裡的 email 是公開的：是否改用 GitHub 的 noreply 信箱 |
 | 有空時 | 公開 repo 目前沒有授權條款（LICENSE）：是否要加 |
 | 有空時 | 看過我加的底線是否同意：[語氣底線](.claude/rules/character-voice.md)、[安全與隱私底線](.claude/rules/safety-privacy.md) |
