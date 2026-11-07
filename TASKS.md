@@ -1,15 +1,15 @@
 # 任務與進度
 
-最後更新：2026-11-04。各階段的內容與驗收標準見[路線圖](docs/product/roadmap.md)。
+最後更新：2026-11-07。各階段的內容與驗收標準見[路線圖](docs/product/roadmap.md)。
 
 ## 目前進度
 
-**基礎文件已完成，App 還沒開工。** 目前還沒有 Xcode 專案和任何 App 程式碼。下一階段是 A0 技術驗證，要等下方「現在輪到你」完成。
+**基礎文件已完成，App 還沒開工。** 目前還沒有 Xcode 專案和任何 App 程式碼。現在在 A0：先用第一隻玩偶做 S1 素材實驗，看能不能拉出滿意的角色外觀。
 
 | 階段 | 內容 | 粗估 | 狀態 |
 |---|---|---|---|
 | C0 | 專案基礎文件 | - | ✅ 完成（`0bc95e4`） |
-| **A0** | **技術驗證：3D 素材、RealityKit** | **3 天** | **⏳ 等你準備** |
+| **A0** | **技術驗證：3D 素材、RealityKit** | **3 天** | **🔄 進行中（S1）** |
 | A1 | 可每天打開的雛型 | 2～3 週 | 未開始 |
 | A2 | 親友測試（不含聊天） | 1 週 | 未開始 |
 | A3 | 小工具與步數 | 2 週 | 未開始 |
@@ -25,15 +25,17 @@ A 是箱庭生活，App 不接 AI；B 是聊天靈魂，App 開始接 AI。
 - [x] 同意 Xcode 授權條款，並讓指令列改用 Xcode（2026-11-04 檢查：`xcodebuild` 正常，有 iOS 26.5 SDK）
 - [x] 下載 iOS 模擬器（2026-11-04 檢查：iOS 26.5 已就緒）
 - [ ] 準備一台實機 iPhone
-- [ ] 自己拍兩隻玩偶的多角度照片，放進 `docs/characters/reference/`（不進 git，要自己備份）
-- [ ] 決定何時開始 A0
+- [ ] 自己拍兩隻玩偶的多角度照片，放進 `penguin-family-assets/`（私有 repo，不進公開 repo）。2026-11-05：第一隻已換成 9 張去背 PNG，檢查過角度足夠，有 3 張要修去背；第二隻等第一隻外觀滿意後再補
+- [x] 決定何時開始 A0（2026-11-05：先開始 S1，先做第一隻）
 
 ## A0 工作清單
 
 **S1 素材實驗**
-- [ ] Claude：查 Meshy、Tripo 的現行條款，並確認生成的模型會不會公開
+- [ ] Claude：查 Meshy、Tripo 的現行條款，並確認生成的模型會不會公開（2026-11-05：Meshy 已讀；Tripo 官網回 403，還沒讀到）
 - [ ] 你：確認要用哪個工具、可以上傳照片
-- [ ] Claude 和你：生成兩隻的 3D 模型，匯出 USDZ
+- [x] Claude 和你：畫第一隻的像素圖正面（2026-11-05 定稿，存在 `penguin-family-assets/`）
+- [ ] Claude 和你：生成第一隻的 3D 模型，匯出 USDZ（是否還要做，看下方「像素或 3D」的決定）
+- [ ] 你：第一隻外觀滿意後，補第二隻的照片並生成
 - [ ] 你：在 iPhone 上看遠景與近景，判斷是否通過
 - [ ] Claude：把素材路線的結果寫成 ADR
 
@@ -47,7 +49,7 @@ A 是箱庭生活，App 不接 AI；B 是聊天靈魂，App 開始接 AI。
 ## 之後要你準備的
 
 **A1 開始前**
-- [ ] 兩隻玩偶的名字、各自的個性與差異（複製[角色聖經範本](docs/characters/bible.md)到 `docs/characters/private/bible.md` 再填，不要填在範本上，範本是公開的）
+- [ ] 兩隻玩偶的名字、各自的個性與差異（填在 `penguin-family-assets/bible.md`，不要填在公開的[角色聖經範本](docs/characters/bible.md)上）。2026-11-05：第一隻的名字與外觀已填，個性和第二隻待填
 - [ ] 30～50 句真實講過的話或情境
 
 **A1 期間**
@@ -59,10 +61,12 @@ A 是箱庭生活，App 不接 AI；B 是聊天靈魂，App 開始接 AI。
 |---|---|
 | 有空時 | `penguin-family` 是正式 App 名稱，還是開發代號 |
 | 有空時 | Xcode 專案與程式要沿用 `Penguin`，還是改成 `PenguinFamily`（S2 建專案前決定最省事） |
-| 拍照前 | 不進 git 的照片、模型、角色聖經與台詞要備份到哪裡（例如另開私有 repo 或 iCloud） |
+| 現在 | 把 `penguin-family-assets/` 上傳成 GitHub 私有 repo（2026-11-07 決定，由作者上傳） |
 | 有空時 | commit 裡的 email 是公開的：是否改用 GitHub 的 noreply 信箱 |
 | 有空時 | 公開 repo 目前沒有授權條款（LICENSE）：是否要加 |
 | 有空時 | 看過我加的底線是否同意：[語氣底線](.claude/rules/character-voice.md)、[安全與隱私底線](.claude/rules/safety-privacy.md) |
+| 現在 | 角色走像素或 3D：走像素要重新檢視 [ADR 0001](docs/adr/0001-realitykit-swiftui.md) 的真 3D 前提 |
+| S1 上傳前 | 市售玩偶的照片能否上傳：Meshy 禁止上傳含第三方受著作權保護內容的參考圖（見[素材調查](docs/research/asset-and-engine.md)） |
 | S2 卡住時 | 是否改用 Unity |
 | A2 發送前 | 玩偶造型：改為原創、取得授權，或了解風險後維持原樣（見 [ADR 0004](docs/adr/0004-plush-likeness-private-use.md)） |
 | A2 之後 | 先做 A3（小工具與步數）還是 B1（聊天） |

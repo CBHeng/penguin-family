@@ -2,12 +2,11 @@
 
 這份文件定義兩隻企鵝的靈魂，由作者填寫。還沒填的地方不要自行編造。語氣底線見 [character-voice](../../.claude/rules/character-voice.md)。
 
-**這份是公開的範本，請勿直接填寫。** 複製到 `docs/characters/private/bible.md` 再填，該路徑不進 git（見 [ADR 0004](../adr/0004-plush-likeness-private-use.md)）；該檔存在時以它為準。
+**這份是公開的範本，請勿直接填寫。** 填寫用的版本在 `penguin-family-assets/bible.md`，該資料夾不進公開 repo（見 [ADR 0004](../adr/0004-plush-likeness-private-use.md)）；該檔存在時以它為準。
 
 ## 目前已知
 
 - **整體個性**（尚未分配到各隻）：天真無邪、開朗、裝可愛、有時小腹黑、無腦。
-- **玩偶外觀**（依本機的市售商品照，目前只有其中一隻，僅供內部參考）：圓胖絨毛身形，藍色頭背、白色臉肚，黃色嘴巴與腳，短鰭，眼睛是固定的笑眼。
 
 ## 企鵝 A
 

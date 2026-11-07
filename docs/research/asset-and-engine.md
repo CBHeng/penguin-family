@@ -25,6 +25,23 @@
 | Meta Animated Drawings 針對人形塗鴉，關節要手動定義，上傳時會詢問可否用於訓練 | [Engadget](https://www.engadget.com/meta-has-open-sourced-an-ai-project-that-turns-your-doodles-into-animations-183807106.html) | 中 |
 | AI-Mascot 宣稱有透明背景輸出，但自述角色一致性仍在成熟中；Kling、Runway 的透明輸出未確認 | [AI-Mascot](https://aitoolscapital.pages.dev/tools/ai-mascot) | 低（廠商） |
 
+## S1 生成工具（查證日期：2026-11-05）
+
+| 發現 | 來源 | 可信度 |
+|---|---|---|
+| Meshy API 的多圖生成收 1～4 張，格式 JPG、PNG、WebP，單張上限 20 MB，每邊至少 32 像素；可輸出 USDZ。沒提到透明 PNG 怎麼處理 | [Meshy API 文件](https://docs.meshy.ai/en/api/multi-image-to-3d) | 高 |
+| Meshy API 免費方案不能建立任務；網頁版免費方案是否可用，文件沒寫 | 同上 | 高 |
+| Tripo API 有多視角生成，可輸出 USDZ，1 credit = $0.01，多視角每次 20～30 credits；網頁版方案與規格沒寫 | [Tripo 開發者頁](https://developers.tripo3d.ai/) | 高 |
+| Tripo H3.1 多視角收 2～4 張 | [WaveSpeed](https://wavespeed.ai/blog/posts/introducing-tripo3d-v2-5-multiview-to-3d-on-wavespeedai) | 低（第三方） |
+| Tripo 免費額度說法不一（200、300、600 credits），要看現行官網 | [Tripo 定價](https://tripo3d.ai/pricing)（搜尋摘要，未讀到全文） | 低 |
+| Meshy 免費方案：每月 100 credits、最多 10 個資產，不含多圖生成；可下載格式含 USDZ，但沒單獨寫免費方案是否適用 | [Meshy 定價](https://www.meshy.ai/pricing) | 高 |
+| Meshy 模型所有權：免費方案歸 Meshy，以 CC BY 4.0 授權給用戶，須標註來源；付費方案歸用戶 | [Meshy 條款 3.2](https://www.meshy.ai/terms-of-use)（2026-09-19 版） | 高 |
+| Meshy 只明寫付費方案可把內容設為私有；沒寫免費方案的內容是否自動進社群頁 | 同上 | 高 |
+| Meshy 預設可用非企業客戶的輸入與輸出訓練模型，可寄信到 support@meshy.ai 退出 | [Meshy 條款 2.9](https://www.meshy.ai/terms-of-use) | 高 |
+| Meshy 禁止上傳含第三方受著作權保護內容的參考圖，用戶要保證擁有上傳所需的權利 | [Meshy 使用政策第 3 節](https://www.meshy.ai/acceptable-use-policy)（2024-11-11 版）、[條款 2.2](https://www.meshy.ai/terms-of-use) | 高 |
+
+**尚未查證：** Tripo 的條款、隱私權政策與定價。官網對抓取回 403，要由作者貼內容。
+
 ## 2.5D 呈現
 
 | 發現 | 來源 | 可信度 |

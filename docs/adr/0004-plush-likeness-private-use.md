@@ -11,17 +11,17 @@ date: 2026-11-04
 
 ## 公開 repo 的界線
 
-repo 是公開的（作者於 2026-11-04 決定），只放程式與文件。以下內容只留在本機被 `.gitignore` 排除的路徑，也要另外備份，因為 git 不會保存它們：
+repo 是公開的（作者於 2026-11-04 決定），只放程式與文件。以下內容不進公開 repo，集中放在根目錄的 `penguin-family-assets/`。這個資料夾被公開 repo 排除，由作者另外以私有 repo 保存（2026-11-07 決定）：
 
 | 內容 | 原因 | 位置 |
 |---|---|---|
-| 玩偶照片，包含作者自拍 | 造型權利 | `docs/characters/reference/` |
-| 由玩偶生成的 3D 模型或紙片素材 | 造型權利 | `Penguin/Resources/CharacterPacks/` |
-| 填好的角色聖經、真實語料 | 作者的私人內容 | `docs/characters/private/` |
-| 作者撰寫的台詞 | 作者的私人內容 | `Penguin/Resources/CharacterPacks/` |
+| 玩偶照片，包含作者自拍 | 造型權利 | `penguin-family-assets/` |
+| 由玩偶畫出或生成的素材，包含像素圖、3D 模型和產生它們的程式 | 造型權利 | `penguin-family-assets/` |
+| 填好的角色聖經、真實語料 | 作者的私人內容 | `penguin-family-assets/` |
+| App 實際使用的角色包，包含台詞 | 造型權利、作者的私人內容 | `Penguin/Resources/CharacterPacks/` |
 
 要公開其中任何一項，都由作者個別決定。
 
-## 參考照
+## 素材來源
 
-`docs/characters/reference/plush-01.jpg` 是市售商品照，不是作者拍攝，只供內部參考：不當素材，也不上傳到第三方服務。
+角色素材只用作者自己拍的照片。市售商品照不當素材，也不上傳到第三方服務。

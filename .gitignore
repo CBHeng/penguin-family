@@ -23,11 +23,11 @@ Secrets.xcconfig
 *.mobileprovision
 
 # 玩偶素材與作者的私人內容，不進公開 repo（見 ADR 0004）
-docs/characters/reference/
-docs/characters/private/
+# penguin-family-assets/ 是獨立的私有 repo
+/penguin-family-assets/
 Penguin/Resources/CharacterPacks/
 *.usdz
 
 # Claude Code 個人設定
-.claude/settings.local.json
+settings.local.json
 .claude/worktrees/
