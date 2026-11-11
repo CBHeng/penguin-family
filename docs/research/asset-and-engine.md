@@ -42,6 +42,18 @@
 
 **尚未查證：** Tripo 的條款、隱私權政策與定價。官網對抓取回 403，要由作者貼內容。
 
+## 像素原型的畫面層（查證日期：2026-11-11）
+
+| 發現 | 來源 | 可信度 |
+|---|---|---|
+| SpriteKit 貼圖可設最近鄰取樣（`filteringMode = .nearest`），放大時保持像素方塊；預設是線性平滑 | [Apple：SKTexture.filteringMode](https://developer.apple.com/documentation/spritekit/sktexture/filteringmode.md) | 高 |
+| 沒查到 SwiftUI 的 `SpriteView` 是否沿用上述設定，要實測 | 搜尋結果 | - |
+| SwiftUI 可用 `TimelineView` 包 `Canvas` 做每秒 60 格的更新迴圈 | [Kodeco](https://kodeco.com/27594491-using-timelineview-and-canvas-in-swiftui/page/2?page=2)、[Jacob's Tech Tavern](https://blog.jacobstechtavern.com/p/swiftui-game-engine) | 中 |
+| SwiftUI 放大圖片時關閉平滑的做法，沒查到可靠來源，要在模擬器實測 | 搜尋結果 | - |
+| Xcode 16 起新專案預設用同步資料夾：放進資料夾的檔案自動加入專案，不用改專案檔 | [Apple 論壇](https://developer.apple.com/forums/thread/789705)、[Dimillian](https://dimillian.medium.com/why-you-should-use-xcode-16-buildable-folders-instead-of-groups-6f438611914d)、[pepicrft](https://pepicrft.me/blog/how-synchronized-groups-work-at-the-pbxproj-level/) | 中 |
+
+**採用的做法**：部件合成用純 Swift 在原始像素尺寸完成，顯示層只做整數倍放大（見[架構](../architecture.md)）。
+
 ## 2.5D 呈現
 
 | 發現 | 來源 | 可信度 |

@@ -18,7 +18,7 @@ repo 是公開的（作者於 2026-11-04 決定），只放程式與文件。以
 | 玩偶照片，包含作者自拍 | 造型權利 | `penguin-family-assets/` |
 | 由玩偶畫出或生成的素材，包含像素圖、3D 模型和產生它們的程式 | 造型權利 | `penguin-family-assets/` |
 | 填好的角色聖經、真實語料 | 作者的私人內容 | `penguin-family-assets/` |
-| App 實際使用的角色包，包含台詞 | 造型權利、作者的私人內容 | `Penguin/Resources/CharacterPacks/` |
+| App 實際使用的角色包，包含台詞 | 造型權利、作者的私人內容 | App 的 `Resources/CharacterPacks/` |
 
 要公開其中任何一項，都由作者個別決定。
 

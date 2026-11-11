@@ -25,7 +25,7 @@ Secrets.xcconfig
 # 玩偶素材與作者的私人內容，不進公開 repo（見 ADR 0004）
 # penguin-family-assets/ 是獨立的私有 repo
 /penguin-family-assets/
-Penguin/Resources/CharacterPacks/
+CharacterPacks/
 *.usdz
 
 # Claude Code 個人設定
