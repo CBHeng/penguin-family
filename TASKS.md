@@ -1,6 +1,6 @@
 # 任務與進度
 
-最後更新：2026-11-11。各階段的內容與驗收標準見[路線圖](docs/product/roadmap.md)。
+最後更新：2026-11-13。各階段的內容與驗收標準見[路線圖](docs/product/roadmap.md)。
 
 ## 目前進度
 
@@ -10,8 +10,8 @@
 
 作者 2026-11-11 的決定：專案名稱 `PenguinFamily`、App 程式放在根目錄的 `ios/`、最低支援 iOS 18、畫面先用像素原型、不寫任何台詞（台詞由作者寫）。做法見[架構](docs/architecture.md)的「World：目前的像素原型」。
 
-1. [ ] 你：用 Xcode 建專案（步驟見下方）
-2. [ ] Claude：把 Xcode 建立的 `PenguinFamily/` 資料夾改名為 `ios/`，檢查專案結構，最低版本改成 iOS 18，確認能編譯
+1. [x] 你：用 Xcode 建專案（2026-11-13 完成；Xcode 26.6 沒有出現「Create Git repository」選項，直接把檔案加進現有 repo 的暫存區，沒有多建 repo）
+2. [x] Claude：把 Xcode 建立的 `PenguinFamily/` 資料夾改名為 `ios/`，檢查專案結構，最低版本改成 iOS 18，確認能編譯（2026-11-13：在 iPhone 17 模擬器（iOS 26.5）上編譯、測試通過；iOS 18 之後用作者的 iOS 18.8 實機驗證）
 3. [ ] Claude：私有素材 repo 加上角色包匯出（部件圖與 `rig.json`），輸出到 `Resources/CharacterPacks/`
 4. [ ] Claude：用 Swift 改寫部件合成，加單元測試（不轉時要和定稿正面圖完全相同）
 5. [ ] Claude：SwiftUI 畫面顯示第一隻，點一下播放「哈囉」；沒有角色包時顯示占位圖形
@@ -25,7 +25,7 @@
 1. File → New → Project，平台 iOS，範本 App。
 2. Product Name：`PenguinFamily`；Team：None；Organization Identifier：例如 `com.cbheng`（會出現在公開 repo）；Interface：SwiftUI；Language：Swift；Testing System：Swift Testing（UI Tests 可不勾）；Storage：None。
 3. 存在 `/Users/boheng/projects/penguin`（公開 repo 根目錄）。Xcode 會建立 `PenguinFamily/` 資料夾，之後由 Claude 改名為 `ios/`，你不用動。
-4. **取消勾選「Create Git repository on my Mac」**，這裡已經是 git repo。
+4. **取消勾選「Create Git repository on my Mac」**，這裡已經是 git repo。Xcode 26.6 存進現有 repo 時不會出現這個選項，找不到就不用管。
 
 | 階段 | 內容 | 粗估 | 狀態 |
 |---|---|---|---|
@@ -45,7 +45,7 @@ A 是箱庭生活，App 不接 AI；B 是聊天靈魂，App 開始接 AI。
 - [x] 安裝 Xcode（2026-11-04 檢查：Xcode 26.6 已在 `/Applications`）
 - [x] 同意 Xcode 授權條款，並讓指令列改用 Xcode（2026-11-04 檢查：`xcodebuild` 正常，有 iOS 26.5 SDK）
 - [x] 下載 iOS 模擬器（2026-11-04 檢查：iOS 26.5 已就緒）
-- [ ] 準備一台實機 iPhone
+- [ ] 準備一台實機 iPhone（2026-11-13：作者的 iPhone 是 iOS 18.8，可用來驗證最低支援版本；還沒設定成開發用）
 - [ ] 自己拍兩隻玩偶的多角度照片，放進 `penguin-family-assets/`（私有 repo `CBHeng/penguin-family-assets`，2026-11-07 已上傳）。2026-11-05：第一隻已換成 9 張去背 PNG，檢查過角度足夠，有 3 張要修去背；第二隻等第一隻外觀滿意後再補
 - [x] 決定何時開始 A0（2026-11-05：先開始 S1，先做第一隻）
 
