@@ -2,10 +2,10 @@
 description: 企鵝的語氣底線。撰寫或審查台詞、人設提示、行為時適用。
 paths:
   - 'docs/characters/**'
-  - 'PenguinFamily/PenguinFamily/App/**'
-  - 'PenguinFamily/PenguinFamily/Soul/**'
-  - 'PenguinFamily/PenguinFamily/Behavior/**'
-  - 'PenguinFamily/PenguinFamily/Resources/CharacterPacks/**'
+  - 'ios/PenguinFamily/App/**'
+  - 'ios/PenguinFamily/Soul/**'
+  - 'ios/PenguinFamily/Behavior/**'
+  - 'ios/PenguinFamily/Resources/CharacterPacks/**'
 ---
 
 # 語氣底線

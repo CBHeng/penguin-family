@@ -8,10 +8,10 @@
 
 ## 目前工作：App 架構先行
 
-作者 2026-11-11 的決定：專案名稱 `PenguinFamily`、最低支援 iOS 18、畫面先用像素原型、不寫任何台詞（台詞由作者寫）。做法見[架構](docs/architecture.md)的「World：目前的像素原型」。
+作者 2026-11-11 的決定：專案名稱 `PenguinFamily`、App 程式放在根目錄的 `ios/`、最低支援 iOS 18、畫面先用像素原型、不寫任何台詞（台詞由作者寫）。做法見[架構](docs/architecture.md)的「World：目前的像素原型」。
 
 1. [ ] 你：用 Xcode 建專案（步驟見下方）
-2. [ ] Claude：檢查專案結構，最低版本改成 iOS 18，確認能編譯
+2. [ ] Claude：把 Xcode 建立的 `PenguinFamily/` 資料夾改名為 `ios/`，檢查專案結構，最低版本改成 iOS 18，確認能編譯
 3. [ ] Claude：私有素材 repo 加上角色包匯出（部件圖與 `rig.json`），輸出到 `Resources/CharacterPacks/`
 4. [ ] Claude：用 Swift 改寫部件合成，加單元測試（不轉時要和定稿正面圖完全相同）
 5. [ ] Claude：SwiftUI 畫面顯示第一隻，點一下播放「哈囉」；沒有角色包時顯示占位圖形
@@ -24,7 +24,7 @@
 
 1. File → New → Project，平台 iOS，範本 App。
 2. Product Name：`PenguinFamily`；Team：None；Organization Identifier：例如 `com.cbheng`（會出現在公開 repo）；Interface：SwiftUI；Language：Swift；Testing System：Swift Testing（UI Tests 可不勾）；Storage：None。
-3. 存在 `/Users/boheng/projects/penguin`（公開 repo 根目錄）。
+3. 存在 `/Users/boheng/projects/penguin`（公開 repo 根目錄）。Xcode 會建立 `PenguinFamily/` 資料夾，之後由 Claude 改名為 `ios/`，你不用動。
 4. **取消勾選「Create Git repository on my Mac」**，這裡已經是 git repo。
 
 | 階段 | 內容 | 粗估 | 狀態 |

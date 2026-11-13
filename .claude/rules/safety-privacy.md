@@ -1,10 +1,10 @@
 ---
 description: 安全與隱私底線。實作或審查聊天、AI 呼叫、記憶、後端、系統權限時適用。
 paths:
-  - 'PenguinFamily/PenguinFamily/Soul/**'
-  - 'PenguinFamily/PenguinFamily/Memory/**'
-  - 'PenguinFamily/PenguinFamily/App/Chat/**'
-  - 'PenguinFamily/PenguinFamily/Activity/**'
+  - 'ios/PenguinFamily/Soul/**'
+  - 'ios/PenguinFamily/Memory/**'
+  - 'ios/PenguinFamily/App/Chat/**'
+  - 'ios/PenguinFamily/Activity/**'
   - 'backend/**'
 ---
 

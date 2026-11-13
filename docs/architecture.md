@@ -2,11 +2,11 @@
 
 目前還沒有程式碼，這裡是規劃中的結構。實作後，以程式碼為準並更新這份文件。
 
-專案名稱 `PenguinFamily`，最低支援 iOS 18（作者 2026-11-11 決定）。Xcode 建專案時會多一層同名資料夾，實際路徑以建好的專案為準。
+專案名稱 `PenguinFamily`，最低支援 iOS 18；App 程式放在根目錄的 `ios/`（作者 2026-11-11 決定）。Xcode 建專案時會建立 `PenguinFamily/` 資料夾，建好後改名為 `ios/`；實際路徑以建好的專案為準。
 
 ```
 penguin-family/                    公開 repo
-├─ PenguinFamily/
+├─ ios/                           App
 │  ├─ PenguinFamily.xcodeproj
 │  ├─ PenguinFamily/
 │  │  ├─ App/        SwiftUI 外殼、抱抱介面、Chat/ 聊天介面
