@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-11-16
 supersedes: 0005 的「畫面用 SwiftUI」
 ---
@@ -29,6 +29,12 @@ supersedes: 0005 的「畫面用 SwiftUI」
 - **沿用的部分**：房間邏輯、等角換算、鏡頭與縮放的數學、動作與預先算好的格子、`Behavior`、`Memory` 都沒有改。
 - **刪除**：SwiftUI 版的 `PenguinView` 與把格子轉成 `CGImage` 的 `PixelImage`（作者 2026-11-16 同意刪除）。
 
-## 什麼時候改為 accepted
+## 定案
 
-在 iPhone 實機上用 Instruments 的 Animation Hitches 量過拖曳、捏合、播哈囉沒有卡頓，作者覺得手感順，就改為 accepted。實機上有問題時，先看是主執行緒還是 GPU，再決定怎麼改。
+2026-11-16 在 iPhone 11（iOS 18.7.8）用正式版量 40 秒的 Animation Hitches，包含拖曳、捏合、點企鵝播哈囉與閒置：
+
+- **卡頓（畫面晚交）0 次**。
+- 每秒畫面張數：拖曳與捏合時 15～54 張（有變化才畫，手指慢時張數少）；播哈囉時穩定 20 張；不動時 0 張，確認有省電。
+- 主執行緒延遲超過 33 毫秒 1 次（39 毫秒），在第一次點企鵝時；推測是事件紀錄第一次寫入資料庫，待 Time Profiler 確認（見 TASKS）。
+
+作者也覺得操作順，改為 accepted。

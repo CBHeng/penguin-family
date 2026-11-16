@@ -11,8 +11,8 @@
 | [0002](0002-hybrid-soul-engine.md) | 預寫台詞優先，只有聊天用雲端 AI | accepted |
 | [0003](0003-on-device-memory.md) | 記憶存手機，後端不保留聊天內容 | accepted |
 | [0004](0004-plush-likeness-private-use.md) | 照玩偶原樣僅限自用與小範圍；造型可替換；公開 repo 的界線 | accepted |
-| [0005](0005-pixel-art-swiftui.md) | 角色與箱庭走像素、部件合成自己寫、維持原生 Swift（「畫面用 SwiftUI」已由 0006 取代） | proposed：實機看過遠景與近景後定案 |
-| [0006](0006-metal-rendering.md) | 箱庭用 Metal 畫，遊戲迴圈有變化才畫 | proposed：實機量過沒有卡頓後定案 |
+| [0005](0005-pixel-art-swiftui.md) | 角色與箱庭走像素、部件合成自己寫、維持原生 Swift（「畫面用 SwiftUI」已由 0006 取代） | accepted |
+| [0006](0006-metal-rendering.md) | 箱庭用 Metal 畫，遊戲迴圈有變化才畫 | accepted |
 
 ## 已取代
 

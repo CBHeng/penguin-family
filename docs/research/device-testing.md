@@ -38,4 +38,25 @@
 
 - **Team ID 放在不進 git 的 `ios/Config/Signing.local.xcconfig`**（作者 2026-11-16 決定）：專案層級的設定讀 `ios/Config/Base.xcconfig`，它用 `#include?` 載入本機檔，三個 target 都會繼承。沒有本機檔時照樣能在模擬器編譯（2026-11-16 實測）。在 Xcode 的 Team 選單重選會把 Team ID 寫回 `project.pbxproj`，commit 前要檢查（見[資安檢查](public-repo-security.md)）。
 - **角色包會跟著裝到手機**：只限作者自己的裝置，符合 [ADR 0004](../adr/0004-plush-likeness-private-use.md) 的自用範圍。
-- **`CharacterPacks.bundle` 沒有 Info.plist**：模擬器沒問題，實機簽署時會不會出錯還沒驗證。
+- **`CharacterPacks.bundle` 沒有 Info.plist**：2026-11-16 實機簽署、安裝、執行都正常。
+
+## 本專案實際的安裝與量測步驟（2026-11-16，iPhone 11、iOS 18.7.8）
+
+iPhone 已配對、開發者模式已開時，可以不開 Xcode 介面，用指令完成（Claude 也是這樣做的）：
+
+```sh
+# 找手機：CoreDevice 的代號（裝 App、啟動用）
+xcrun devicectl list devices
+# 編譯並自動簽署（量效能要用 -configuration Release）
+xcodebuild -project ios/PenguinFamily.xcodeproj -scheme PenguinFamily -configuration Debug \
+  -destination 'id=<CoreDevice 代號>' -allowProvisioningUpdates build
+# 安裝、啟動
+xcrun devicectl device install app --device <CoreDevice 代號> <建置出的 PenguinFamily.app>
+xcrun devicectl device process launch --device <CoreDevice 代號> com.cbheng.PenguinFamily
+# 量卡頓：Instruments 用的是另一個代號（UDID），用 xctrace 列出
+xcrun xctrace list devices
+xcrun xctrace record --template 'Animation Hitches' --device <UDID> --time-limit 40s --launch -- com.cbheng.PenguinFamily
+```
+
+- 第一次啟動會失敗（簽署未被信任）：在手機的 設定 → 一般 → VPN 與裝置管理 信任自己的開發者帳號，之後就能啟動。
+- Animation Hitches 範本以「卡頓」與「主執行緒延遲」為主，不含函式呼叫的取樣；要找慢在哪裡，另外用 Time Profiler 錄。
