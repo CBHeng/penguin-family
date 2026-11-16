@@ -67,6 +67,7 @@ App 分三層，像 Vue 的「props 往下、events 往上」：
 |---|---|
 | [MetalRoomView.swift](../ios/PenguinFamily/World/Render/MetalRoomView.swift) | 把 Metal 畫面放進 SwiftUI；`GameLoop` 跟著螢幕更新（最高到手機支援的更新率），有變化才畫，沒事時暫停。 |
 | [SpriteRenderer.swift](../ios/PenguinFamily/World/Render/SpriteRenderer.swift) | 載入時把所有圖送進 GPU；每一格照 `RoomStage` 的清單貼圖，對齊同一個像素格子、不平滑。shader 在同資料夾的 `Sprites.metal`。 |
+| [PerfSignposts.swift](../ios/PenguinFamily/World/Render/PerfSignposts.swift) | 量效能用的標記（signpost）：遊戲迴圈每一格、算、畫、等畫布、點擊各花多久，在 Instruments 的 Points of Interest 看。 |
 
 ### Behavior：企鵝想做什麼
 

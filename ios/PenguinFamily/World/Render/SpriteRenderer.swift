@@ -1,4 +1,5 @@
 import MetalKit
+import os
 
 /// 用 Metal 照 `RoomStage` 的清單把每一張圖畫出來（ADR 0006）。
 ///
@@ -80,9 +81,12 @@ final class SpriteRenderer: NSObject, MTKViewDelegate {
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
 
     func draw(in view: MTKView) {
-        guard let transform = stage.viewTransform, stage.viewport.width > 0,
-              let pass = view.currentRenderPassDescriptor,
-              let drawable = view.currentDrawable,
+        guard let transform = stage.viewTransform, stage.viewport.width > 0 else { return }
+        // 要畫布：沒有空的畫布時會在這裡等（量這一步，追偶發的變慢）
+        let (pass, drawable) = PerfSignposts.measure("acquireDrawable") {
+            (view.currentRenderPassDescriptor, view.currentDrawable)
+        }
+        guard let pass, let drawable,
               let buffer = commandQueue.makeCommandBuffer(),
               let encoder = buffer.makeRenderCommandEncoder(descriptor: pass)
         else { return }
@@ -91,6 +95,8 @@ final class SpriteRenderer: NSObject, MTKViewDelegate {
         // 一個箱庭像素等於幾個螢幕實體像素
         let devicePerPixel = transform.pointsPerPixel * drawableSize.width / stage.viewport.width
         let viewport = SIMD2<Float>(Float(drawableSize.width), Float(drawableSize.height))
+        let encode = PerfSignposts.signposter.beginInterval("encode")
+        defer { PerfSignposts.signposter.endInterval("encode", encode) }
         encoder.setRenderPipelineState(pipeline)
         encoder.setFragmentSamplerState(sampler, index: 0)
         for sprite in stage.sprites() {

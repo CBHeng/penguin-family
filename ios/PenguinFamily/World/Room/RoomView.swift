@@ -50,7 +50,9 @@ struct RoomView: View {
     private var tapGesture: some Gesture {
         SpatialTapGesture()
             .onEnded { value in
-                if stage.hitsPenguin(at: value.location) { tapPenguin() }
+                PerfSignposts.measure("tap") {
+                    if stage.hitsPenguin(at: value.location) { tapPenguin() }
+                }
             }
     }
 

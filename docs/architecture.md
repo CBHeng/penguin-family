@@ -88,6 +88,7 @@ penguin-family/                    公開 repo
   - `GameLoop`（在 `MetalRoomView`）：用 `CADisplayLink` 跟著螢幕更新，最高到手機支援的更新率（120Hz 要 Info.plist 的 `CADisableMinimumFrameDurationOnPhone`，放在 `ios/Config/PenguinFamily-Info.plist`）。每一格問 `RoomStage` 有沒有變化，有才畫；沒東西在動時暫停省電，需要時（例如 5 秒後鏡頭回去）再醒來。
   - 畫面本身不會移動，鏡頭與縮放都在繪圖時處理，所以手勢座標就是畫面上的位置。
   - 建置需要 Metal Toolchain（Xcode 26 起另外下載，見 ADR 0006）。
+  - **量測點**（`PerfSignposts`，常駐）：每一格、`RoomStage` 計算、畫、等畫布、送出指令、點擊處理都有 signpost，在 Instruments 的 Points of Interest 看。2026-11-16 iPhone 11 正式版 40 秒、1,069 格：一格中位 1.37 毫秒、最慢 5.84 毫秒（預算 16.7 毫秒）；最慢的是暫停後醒來的第一格，慢在等畫布（4 毫秒），所以閒置暫停值得保留。
 - **播放**：哈囉以每秒 20 格播放，時間軸 `HelloMotion` 照私有素材 repo 的 `hello_pose()`，兩隻共用。`RoomStage` 照 `Behavior` 的意圖選動作，播完經 `GameLoop` 回報給 `Behavior`。
 - **動作與預先算好的格子**（作者 2026-11-16 決定）：動作是資料（`Motion`：每秒幾格、共幾格、第幾格的姿勢），`Motion.all` 列出所有動作。載入角色時，`CharacterFrames` 把站好與每個動作的每一格都先合成好；播放時只取出來貼，拖曳重畫時也不重新合成。2026-11-16 在 Mac（M4 Pro）上量，一格合成約 0.09 毫秒、44×45 像素約 7.9KB；哈囉 56 格約 0.44MB。A1 全部動作都存起來的推估約 10MB 以內（假設兩隻、各約 10 個動作、每個約 60 格）。動作多到打開 App 明顯變慢時，再改成背景算或第一次播才算。跟著互動即時變化的姿勢（例如抱抱時壓扁）不預先算，直接用 `RigCompositor` 合成。`CharacterPackLibrary` 列出 App 裡的角色包，載入第一隻能用的；沒有或全壞時顯示灰色占位剪影。
 - **取整要和 Python 相同**：Python 3 的 `round()` 遇到 .5 取最近的偶數，Swift 的 `rounded()` 預設遠離 0，所以 Swift 版明確用 `.toNearestOrEven`（2026-11-16 查證：[SE-0113](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0113-rounding-functions-on-floatingpoint.md)、[Apple `rounded(_:)`](https://developer.apple.com/documentation/swift/double/rounded(_:))、[Python 文件討論](https://www.python.org/pipermail/docs/2013-February/012898.html)）。

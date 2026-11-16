@@ -1,4 +1,5 @@
 import MetalKit
+import os
 import SwiftUI
 
 /// 把 Metal 的畫面放進 SwiftUI。畫面本身不會移動，鏡頭、縮放都在繪圖時處理。
@@ -46,6 +47,8 @@ final class GameLoop: NSObject {
     private var renderer: SpriteRenderer?
     private var link: CADisplayLink?
     private var wakeTask: Task<Void, Never>?
+    /// 暫停的時間點；量「暫停多久後醒來」用。
+    private var pausedAt: CFTimeInterval?
 
     init(stage: RoomStage) {
         self.stage = stage
@@ -76,16 +79,25 @@ final class GameLoop: NSObject {
     private func wake() {
         wakeTask?.cancel()
         wakeTask = nil
+        if let pausedAt, link?.isPaused == true {
+            let pausedMs = Int((CACurrentMediaTime() - pausedAt) * 1000)
+            PerfSignposts.signposter.emitEvent("wake", "paused \(pausedMs) ms")
+            self.pausedAt = nil
+        }
         link?.isPaused = false
     }
 
     @objc private func tick(_ link: CADisplayLink) {
+        let frame = PerfSignposts.signposter.beginInterval("frame")
+        defer { PerfSignposts.signposter.endInterval("frame", frame) }
         let now = CACurrentMediaTime()
-        let tick = stage.update(now: now)
+        let tick = PerfSignposts.measure("update") { stage.update(now: now) }
         if tick.motionFinished { onMotionFinished() }
-        if tick.draw { view?.draw() }
+        if tick.draw { PerfSignposts.measure("draw") { view?.draw() } }
         guard !tick.keepRunning else { return }
         link.isPaused = true
+        pausedAt = now
+        PerfSignposts.signposter.emitEvent("pause")
         if let wakeAt = tick.wakeAt {
             wakeTask = Task { [weak self] in
                 try? await Task.sleep(for: .seconds(max(0, wakeAt - now)))

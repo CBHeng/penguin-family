@@ -59,4 +59,12 @@ xcrun xctrace record --template 'Animation Hitches' --device <UDID> --time-limit
 ```
 
 - 第一次啟動會失敗（簽署未被信任）：在手機的 設定 → 一般 → VPN 與裝置管理 信任自己的開發者帳號，之後就能啟動。
-- Animation Hitches 範本以「卡頓」與「主執行緒延遲」為主，不含函式呼叫的取樣；要找慢在哪裡，另外用 Time Profiler 錄。
+- Animation Hitches 範本以「卡頓」與「主執行緒延遲」為主，不含函式呼叫的取樣。
+- **要找慢在哪一步**，加上我們自己的量測點一起錄（App 內建 `PerfSignposts`）：
+
+```sh
+xcrun xctrace record --template 'Time Profiler' --instrument 'Hangs' --instrument 'Points of Interest' \
+  --device <UDID> --time-limit 40s --launch -- com.cbheng.PenguinFamily
+```
+
+  匯出 `os-signpost` 表就能看到每一步的時間；Time Profiler 的函式取樣匯出後只有記憶體位址，要另外符號化，通常看量測點就夠了。
