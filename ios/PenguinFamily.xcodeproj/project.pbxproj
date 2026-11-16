@@ -27,6 +27,7 @@
 		02C8FB1830A6E11D0003D61D /* PenguinFamily.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PenguinFamily.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		02C8FB2530A6E11E0003D61D /* PenguinFamilyTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PenguinFamilyTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		02C8FB2F30A6E11E0003D61D /* PenguinFamilyUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PenguinFamilyUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		02C8FB5130A6E11E0003D61D /* Base.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Base.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -78,6 +79,7 @@
 				02C8FB1A30A6E11D0003D61D /* PenguinFamily */,
 				02C8FB2830A6E11E0003D61D /* PenguinFamilyTests */,
 				02C8FB3230A6E11E0003D61D /* PenguinFamilyUITests */,
+				02C8FB5030A6E11E0003D61D /* Config */,
 				02C8FB1930A6E11D0003D61D /* Products */,
 			);
 			sourceTree = "<group>";
@@ -90,6 +92,14 @@
 				02C8FB2F30A6E11E0003D61D /* PenguinFamilyUITests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		02C8FB5030A6E11E0003D61D /* Config */ = {
+			isa = PBXGroup;
+			children = (
+				02C8FB5130A6E11E0003D61D /* Base.xcconfig */,
+			);
+			path = Config;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -271,6 +281,7 @@
 /* Begin XCBuildConfiguration section */
 		02C8FB3730A6E11E0003D61D /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 02C8FB5130A6E11E0003D61D /* Base.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
@@ -334,6 +345,7 @@
 		};
 		02C8FB3830A6E11E0003D61D /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 02C8FB5130A6E11E0003D61D /* Base.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;

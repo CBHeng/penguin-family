@@ -1,0 +1,7 @@
+// 專案層級的共用設定，三個 target 都會繼承。
+//
+// 簽署用的 Team ID 放在同資料夾、不進 git 的 Signing.local.xcconfig（範本見 Signing.local.xcconfig.example）。
+// 這個 repo 是公開的，所以不把 Team ID 寫進 project.pbxproj（見 docs/research/device-testing.md）。
+// 沒有這個檔案時照樣能在模擬器編譯，只是不能裝到實機。
+
+#include? "Signing.local.xcconfig"

@@ -48,3 +48,4 @@ API 金鑰、權杖、密碼、憑證與私鑰只留在本機被 `.gitignore` �
 | 重新評估素材工具或引擎 | [docs/research/asset-and-engine.md](docs/research/asset-and-engine.md) |
 | 碰 AI 費用、法規、上架議題 | [docs/research/compliance-and-ai.md](docs/research/compliance-and-ai.md) |
 | commit 前、碰簽署或金鑰 | [docs/research/public-repo-security.md](docs/research/public-repo-security.md) |
+| 裝到實機、Apple 帳號與簽署 | [docs/research/device-testing.md](docs/research/device-testing.md) |

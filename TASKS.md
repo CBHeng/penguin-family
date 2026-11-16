@@ -45,7 +45,7 @@ A 是箱庭生活，App 不接 AI；B 是聊天靈魂，App 開始接 AI。
 - [x] 安裝 Xcode（2026-11-04 檢查：Xcode 26.6 已在 `/Applications`）
 - [x] 同意 Xcode 授權條款，並讓指令列改用 Xcode（2026-11-04 檢查：`xcodebuild` 正常，有 iOS 26.5 SDK）
 - [x] 下載 iOS 模擬器（2026-11-04 檢查：iOS 26.5 已就緒）
-- [ ] 準備一台實機 iPhone（2026-11-13：作者的 iPhone 是 iOS 18.8，可用來驗證最低支援版本；還沒設定成開發用）
+- [ ] 準備一台實機 iPhone（2026-11-13：作者的 iPhone 是 iOS 18.8，可用來驗證最低支援版本。2026-11-16：Xcode 已登入 Apple ID、選好 Personal Team，Team ID 在本機的 `ios/Config/Signing.local.xcconfig`；**暫停，等有傳輸線**再做：接線執行、開發者模式、信任開發者、勾選無線連線，步驟見[實機測試](docs/research/device-testing.md)）
 - [ ] 自己拍兩隻玩偶的多角度照片，放進 `penguin-family-assets/`（私有 repo `CBHeng/penguin-family-assets`，2026-11-07 已上傳）。2026-11-05：第一隻已換成 9 張去背 PNG，檢查過角度足夠，有 3 張要修去背；第二隻等第一隻外觀滿意後再補
 - [x] 決定何時開始 A0（2026-11-05：先開始 S1，先做第一隻）
 
@@ -62,7 +62,7 @@ A 是箱庭生活，App 不接 AI；B 是聊天靈魂，App 開始接 AI。
 - [ ] Claude：把素材路線的結果寫成 ADR
 
 **S2 RealityKit 驗證**
-- [ ] Claude：查證上實機需要哪種 Apple 帳號與簽署方式
+- [x] Claude：查證上實機需要哪種 Apple 帳號與簽署方式（2026-11-16：自己的 iPhone 用免費 Apple ID 即可，7 天要重裝；給親友要付費會員。見[實機測試](docs/research/device-testing.md)）
 - [ ] Claude：建立固定鏡頭的場景（Xcode 專案改在「App 架構先行」建立）
 - [ ] Claude：做搖擺走路、點擊反應、長按拉近與觸覺回饋
 - [x] 確認最低 iOS 版本（2026-11-11 作者決定：iOS 18）
