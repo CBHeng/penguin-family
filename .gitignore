@@ -26,6 +26,7 @@ Secrets.xcconfig
 # penguin-family-assets/ 是獨立的私有 repo
 /penguin-family-assets/
 CharacterPacks/
+CharacterPacks.bundle/
 *.usdz
 
 # Claude Code 個人設定

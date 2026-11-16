@@ -16,7 +16,7 @@ penguin-family/                    公開 repo
 │  │  ├─ Memory/     本機關係狀態、事件紀錄、聊天內容與共同回憶（SwiftData）
 │  │  ├─ Activity/   A3 才加入的步數連動
 │  │  ├─ Feel/       觸覺與音效
-│  │  └─ Resources/  CharacterPacks/<角色>/、CharacterPacks/duo.json（不進 git）
+│  │  └─ Resources/  CharacterPacks.bundle/<角色>/rig.json、CharacterPacks.bundle/duo.json（不進 git）
 │  ├─ PenguinFamilyTests/   單元測試
 │  └─ PenguinFamilyWidget/  A3 才加入
 ├─ backend/                       B1 才加入的薄後端
@@ -29,7 +29,8 @@ penguin-family/                    公開 repo
 - **`DialogueEngine` 是台詞來源的 protocol。** 路線一用 `ScriptedEngine`，路線二加 `CloudEngine`。決策原因見 [ADR 0002](adr/0002-hybrid-soul-engine.md)。
 - **箱庭與聊天透過事件紀錄連接。** 箱庭寫入發生的事，聊天讀取後才能提到；聊天再把主人的心情和共同回憶寫回，影響箱庭。路線一就要記下事件，避免之後重工。
 - **`CharacterPack` 把造型與個性資料化。** 換造型不用改程式，原因見 [ADR 0004](adr/0004-plush-likeness-private-use.md)。
-- **`CharacterPacks/` 不進 git。** repo 是公開的，所以乾淨 clone 下來沒有角色包；這時 App 顯示簡單的占位圖形，不能壞掉。單元測試用測試專用的假資料，不依賴這個資料夾。
+- **`CharacterPacks.bundle/` 不進 git。** repo 是公開的，所以乾淨 clone 下來沒有角色包；這時 App 顯示簡單的占位圖形，不能壞掉。單元測試用測試專用的假資料，不依賴這個資料夾。
+- **程式不寫死角色 id。** 角色包的資料夾名稱就是角色 id，可能帶有角色名稱，而角色名稱只能出現在私有 repo；App 要列出 `CharacterPacks.bundle/` 底下有哪些角色，不在程式或測試裡寫死。
 - **人設是資料。** 台詞與個性放 JSON，作者不改程式也能調教。填好的角色聖經是權威來源（位置見[範本](characters/bible.md)），JSON 依它產生；內容有出入時，以角色聖經為準。兩隻共有的關係資料放 `duo.json`。
 - **聊天內容與共同回憶由 `Memory` 管理，只存手機。** 後端只轉發，原因見 [ADR 0003](adr/0003-on-device-memory.md)。
 
@@ -41,7 +42,15 @@ penguin-family/                    公開 repo
 - **合成規則**：身體、手、頭的底色與輪廓可以旋轉；帽子、嘴巴、眼睛等小部件只跟著移動、不轉，因為像素圖轉小角度會把小形狀弄碎；外框在每格組好後才統一描。
 - **合成是純 Swift**：不依賴繪圖框架，可以寫單元測試；顯示層只負責把合成好的圖放大貼上，放大時不能做平滑處理。
 - **為什麼不直接用 SpriteKit 旋轉部件**：SpriteKit 是在螢幕解析度旋轉放大後的貼圖，像素不會重新對齊格子，和調好的預覽不同，帽子與五官錯位的問題可能再出現（推測，未實測）。查證紀錄見[素材調查](research/asset-and-engine.md)。
-- **角色包內容**：部件圖與骨架設定 `rig.json`（部件、轉軸、哪些部件只移動不轉），由私有素材 repo 的程式匯出到 `Resources/CharacterPacks/<角色>/`。
+- **角色包內容**：每隻角色一個 `rig.json`，由私有素材 repo 的 `export_pack.py` 匯出到 `Resources/CharacterPacks.bundle/<角色>/`（作者 2026-11-16 決定）。內容：
+  - `canvas`：部件畫布的寬高；以下座標都是這個畫布上的格子座標。
+  - `palette`、`outline`、`empty`：調色盤代碼對應的顏色、外框用哪個代碼、哪個字元代表透明。
+  - `parts`：每個部件的左上角 `x`、`y` 與每列像素 `rows`（一個字元一格，用調色盤代碼）。會轉的部件有轉軸 `pivot`；只移動不轉的部件標 `follows`（跟著哪個部件）與 `anchor`（跟著轉的那一點）。
+  - `drawOrder`、`rig`：疊放順序，以及合成用的參數（脖子高度、手舉多高換成舉手圖）。
+  - `front`：定稿正面圖在畫布上的位置與像素，用來檢查「部件都不動時和定稿完全相同」。
+- **部件像素寫在 JSON，不用 PNG**：合成與測試只需要純 Swift，不用解碼圖片；顏色也一定精確，不會被色彩管理改掉（後者是推測，未實測）。要看圖時，看私有素材 repo 的預覽 GIF。
+- **為什麼是 `.bundle`**：2026-11-16 用 Xcode 26.6 實測，專案同步的資料夾會把子資料夾的檔案攤平放進 App，兩隻角色的 `rig.json` 會撞名、編譯失敗；資料夾名稱以 `.bundle` 結尾時會整包複製、保留結構。沒有角色包時也能編譯。
+- **合成的對照規格**：私有素材 repo 匯出程式裡的 `compose_from_rig()` 只用 `rig.json` 合成，匯出時會和原本的動作程式逐格比對；Swift 版照它實作。
 
 ## 測試
 

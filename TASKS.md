@@ -1,6 +1,6 @@
 # 任務與進度
 
-最後更新：2026-11-13。各階段的內容與驗收標準見[路線圖](docs/product/roadmap.md)。
+最後更新：2026-11-16。各階段的內容與驗收標準見[路線圖](docs/product/roadmap.md)。
 
 ## 目前進度
 
@@ -12,7 +12,7 @@
 
 1. [x] 你：用 Xcode 建專案（2026-11-13 完成；Xcode 26.6 沒有出現「Create Git repository」選項，直接把檔案加進現有 repo 的暫存區，沒有多建 repo）
 2. [x] Claude：把 Xcode 建立的 `PenguinFamily/` 資料夾改名為 `ios/`，檢查專案結構，最低版本改成 iOS 18，確認能編譯（2026-11-13：在 iPhone 17 模擬器（iOS 26.5）上編譯、測試通過；iOS 18 之後用作者的 iOS 18.8 實機驗證）
-3. [ ] Claude：私有素材 repo 加上角色包匯出（部件圖與 `rig.json`），輸出到 `Resources/CharacterPacks/`
+3. [x] Claude：私有素材 repo 加上角色包匯出，輸出到 `Resources/CharacterPacks.bundle/`（2026-11-16 完成：部件像素寫進 `rig.json`，匯出時檢查和定稿正面圖、哈囉 56 格都相同；格式見[架構](docs/architecture.md)）
 4. [ ] Claude：用 Swift 改寫部件合成，加單元測試（不轉時要和定稿正面圖完全相同）
 5. [ ] Claude：SwiftUI 畫面顯示第一隻，點一下播放「哈囉」；沒有角色包時顯示占位圖形
 6. [ ] Claude：`Behavior` 最小狀態機（待機 → 被點 → 哈囉 → 待機），只輸出意圖，加測試
