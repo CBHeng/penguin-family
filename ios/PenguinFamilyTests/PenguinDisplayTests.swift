@@ -38,7 +38,7 @@ struct PenguinDisplayTests {
             "R": try #require(PixelColor(hex: "#FF0102")),
             "O": try #require(PixelColor(hex: "#030405")),
         ]
-        #expect(PixelImage.rgba(grid, colors: colors) == [
+        #expect(PixelBitmap(grid, colors: colors).rgba == [
             255, 1, 2, 255, 0, 0, 0, 0,
             0, 0, 0, 0, 3, 4, 5, 255,
         ])

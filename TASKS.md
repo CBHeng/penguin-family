@@ -56,7 +56,7 @@ A 是箱庭生活，App 不接 AI；B 是聊天靈魂，App 開始接 AI。
 
 ## 現在輪到你
 
-- [ ] **實機**：有傳輸線時，接線執行、開發者模式、信任開發者、勾選無線連線（步驟見[實機測試](docs/research/device-testing.md)）；然後看遠景與近景，決定 ADR 0005 能否定案。Xcode 已登入、Team ID 在本機的 `ios/Config/Signing.local.xcconfig`。
+- [ ] **實機**：有傳輸線時，接線執行、開發者模式、信任開發者、勾選無線連線（步驟見[實機測試](docs/research/device-testing.md)）；然後看遠景與近景，決定 ADR 0005 能否定案；用 Instruments 的 Animation Hitches 量拖曳、捏合、播哈囉，決定 [ADR 0006](docs/adr/0006-metal-rendering.md)（Metal 繪圖）能否定案。Xcode 已登入、Team ID 在本機的 `ios/Config/Signing.local.xcconfig`。
 - [ ] **第二隻**：多角度照片放進 `penguin-family-assets/`，再一起畫像素圖。第一隻的 9 張照片中有 3 張要修去背。
 - [ ] **角色聖經**：兩隻的個性與差異，填在 `penguin-family-assets/bible.md`（不要填在公開的[範本](docs/characters/bible.md)）。第一隻的名字與外觀已填。鬥嘴與台詞要等它。
 - [ ] **真實語料**：30～50 句真實講過的話或情境。

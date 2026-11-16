@@ -47,7 +47,7 @@ API 金鑰、權杖、密碼、憑證與私鑰只留在本機被 `.gitignore` �
 | 寫台詞、行為、人設提示 | [docs/characters/bible.md](docs/characters/bible.md)、[語氣底線](.claude/rules/character-voice.md) |
 | 碰聊天、AI、記憶、後端、權限 | [安全與隱私底線](.claude/rules/safety-privacy.md) |
 | 想質疑或推翻技術、資料、造型的決定 | [docs/adr/](docs/adr/) |
-| 重新評估素材工具或引擎 | [docs/research/asset-and-engine.md](docs/research/asset-and-engine.md) |
+| 重新評估素材工具、引擎或繪圖方式 | [docs/research/asset-and-engine.md](docs/research/asset-and-engine.md)、[docs/research/rendering-performance.md](docs/research/rendering-performance.md) |
 | 碰 AI 費用、法規、上架議題 | [docs/research/compliance-and-ai.md](docs/research/compliance-and-ai.md) |
 | commit 前、碰簽署或金鑰 | [docs/research/public-repo-security.md](docs/research/public-repo-security.md) |
 | 裝到實機、Apple 帳號與簽署 | [docs/research/device-testing.md](docs/research/device-testing.md) |

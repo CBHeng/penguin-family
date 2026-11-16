@@ -7,14 +7,15 @@
 - **保持同步**：`CodeMapTests` 會檢查每個 `.swift` 檔都列在這份文件裡、這裡列的檔案都存在；新增、刪除或改名檔案時，測試失敗就是提醒你回來更新。內容寫得對不對，還是靠人（作者 2026-11-16 決定）。
 - 圖用 [Mermaid](https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/creating-diagrams)：在 GitHub 上會畫成圖；在終端機裡看到的是原始文字。
 
-最後更新：2026-11-16（加入載入畫面、動作格式與預先算好的格子）。
+最後更新：2026-11-16（繪圖改用 Metal，見 [ADR 0006](adr/0006-metal-rendering.md)）。
 
 ## 一句話看懂
 
 App 分三層，像 Vue 的「props 往下、events 往上」：
 
 - **`Behavior`** 決定企鵝「想做什麼」，輸出意圖（待機、哈囉）。純 Swift，不碰畫面。
-- **`World`** 把意圖畫出來，並把主人的手勢往上回報。只有這層碰 SwiftUI。
+- **`World`** 把意圖畫出來，並把主人的手勢往上回報。只有這層碰畫面（SwiftUI 與 Metal）。
+  - 畫面用 Metal 畫：`RoomStage` 決定每一格要畫什麼（純邏輯），`SpriteRenderer` 照清單把貼圖畫出來，`GameLoop` 跟著螢幕的節奏、有變化才畫。
 - **`Memory`** 記下發生過的事，只存在手機上。
 - **`GameView`** 是接線員：把三層接起來，本身幾乎沒有邏輯，像 Vue 的頁面元件。
 - **`ContentView`** 先顯示載入畫面，在背景把角色準備好，再切到 `GameView`（見[架構的技術取捨](architecture.md#技術取捨)）。
@@ -35,7 +36,6 @@ App 分三層，像 Vue 的「props 往下、events 往上」：
 | 檔案 | 職責 |
 |---|---|
 | [CharacterPackLibrary.swift](../ios/PenguinFamily/World/CharacterPackLibrary.swift) | 列出 App 裡的角色包，載入第一隻能用的（同時預先算好每一格）；壞掉的跳過。不寫死角色 id。 |
-| [PenguinView.swift](../ios/PenguinFamily/World/PenguinView.swift) | 一隻企鵝：照意圖選動作，取出預先算好的圖播放；點擊與播完往上回報；沒有角色包時畫灰色剪影。 |
 
 **`World/Pixel/`：企鵝怎麼畫**
 
@@ -47,7 +47,8 @@ App 分三層，像 Vue 的「props 往下、events 往上」：
 | [HelloMotion.swift](../ios/PenguinFamily/World/Pixel/HelloMotion.swift) | 哈囉的時間軸：第幾格時頭、手各轉幾度。 |
 | [CharacterFrames.swift](../ios/PenguinFamily/World/Pixel/CharacterFrames.swift) | 一隻角色預先算好的圖：站好一張，加上每個動作的每一格。載入角色時全部算好，播放時只取出來貼。 |
 | [PixelGrid.swift](../ios/PenguinFamily/World/Pixel/PixelGrid.swift) | 像素格子：每格放一個調色盤代碼或透明。 |
-| [PixelImage.swift](../ios/PenguinFamily/World/Pixel/PixelImage.swift) | 把像素格子轉成可以顯示的圖（`CGImage`）。 |
+| [PixelBitmap.swift](../ios/PenguinFamily/World/Pixel/PixelBitmap.swift) | 原始尺寸的 RGBA 位元組；直接送進 GPU 當貼圖，顏色不經過轉換。 |
+| [PlaceholderSilhouette.swift](../ios/PenguinFamily/World/Pixel/PlaceholderSilhouette.swift) | 沒有角色包時的灰色占位剪影。 |
 
 **`World/Room/`：箱庭怎麼畫**
 
@@ -57,7 +58,15 @@ App 分三層，像 Vue 的「props 往下、events 往上」：
 | [RoomRenderer.swift](../ios/PenguinFamily/World/Room/RoomRenderer.swift) | 畫牆、地板、窗戶與家具的色塊盒子；決定誰畫在前面。 |
 | [RoomCamera.swift](../ios/PenguinFamily/World/Room/RoomCamera.swift) | 鏡頭的數學：畫面中央對著哪一點、不超出房間、慢慢靠近目標、對齊螢幕像素。 |
 | [RoomZoom.swift](../ios/PenguinFamily/World/Room/RoomZoom.swift) | 縮放的數學：最大 3pt、最小房間左右塞滿畫面、放開後吸附、手指下那一點不動。 |
-| [RoomView.swift](../ios/PenguinFamily/World/Room/RoomView.swift) | 把背景、家具與企鵝依前後疊起來；處理拖曳、捏合，以及閒置後鏡頭回到企鵝身邊。 |
+| [RoomStage.swift](../ios/PenguinFamily/World/Room/RoomStage.swift) | 箱庭的即時狀態：鏡頭、縮放、正在播的動作；每一格要畫哪些圖、點擊打中誰、要不要重畫、閒置後鏡頭回去。純邏輯。 |
+| [RoomView.swift](../ios/PenguinFamily/World/Room/RoomView.swift) | 放上 Metal 畫面，把點擊、拖曳、捏合與意圖交給 `RoomStage`。 |
+
+**`World/Render/`：用 Metal 畫出來**
+
+| 檔案 | 職責 |
+|---|---|
+| [MetalRoomView.swift](../ios/PenguinFamily/World/Render/MetalRoomView.swift) | 把 Metal 畫面放進 SwiftUI；`GameLoop` 跟著螢幕更新（最高到手機支援的更新率），有變化才畫，沒事時暫停。 |
+| [SpriteRenderer.swift](../ios/PenguinFamily/World/Render/SpriteRenderer.swift) | 載入時把所有圖送進 GPU；每一格照 `RoomStage` 的清單貼圖，對齊同一個像素格子、不平滑。shader 在同資料夾的 `Sprites.metal`。 |
 
 ### Behavior：企鵝想做什麼
 
@@ -89,9 +98,10 @@ App 分三層，像 Vue 的「props 往下、events 往上」：
 | [RoomTests.swift](../ios/PenguinFamilyTests/RoomTests.swift) | 房間擺放檢查、等角換算、背景與家具的畫法、前後順序。 |
 | [RoomCameraTests.swift](../ios/PenguinFamilyTests/RoomCameraTests.swift) | 鏡頭範圍、對齊像素、慢慢靠近。 |
 | [RoomZoomTests.swift](../ios/PenguinFamilyTests/RoomZoomTests.swift) | 縮放範圍、吸附、手指下那一點不動。 |
+| [RoomStageTests.swift](../ios/PenguinFamilyTests/RoomStageTests.swift) | 要畫什麼與順序、點擊、拖曳、捏合、動作播放、閒置後鏡頭回去、有變化才重畫。 |
 | [CodeMapTests.swift](../ios/PenguinFamilyTests/CodeMapTests.swift) | 這份文件和實際檔案一致。 |
 
-畫面與手感不在單元測試裡，用模擬器與實機確認。
+Metal 實際畫出來的樣子與手感不在單元測試裡，用模擬器截圖與實機確認。
 
 ## 誰用誰
 
@@ -110,24 +120,28 @@ flowchart TD
     subgraph World["World：畫面"]
         Library --> Compositor["RigCompositor"]
         Library --> Frames["CharacterFrames"]
-        Room --> Penguin["PenguinView"]
-        Room --> Renderer["RoomRenderer"]
-        Room --> Camera["RoomCamera"]
-        Room --> Zoom["RoomZoom"]
-        Room --> Layout["RoomLayout"]
-        Room --> Image["PixelImage"]
-        Renderer --> Layout
-        Renderer --> Grid["PixelGrid"]
-        Penguin --> Frames
-        Penguin --> Motion["Motion"]
-        Penguin --> Image
+        Room --> Metal["MetalRoomView（GameLoop）"]
+        Room --> Stage["RoomStage"]
+        Metal --> Renderer["SpriteRenderer"]
+        Metal --> Stage
+        Renderer --> Stage
+        Stage --> Frames
+        Stage --> Motion["Motion"]
+        Stage --> RoomRenderer["RoomRenderer"]
+        Stage --> Camera["RoomCamera"]
+        Stage --> Zoom["RoomZoom"]
+        Stage --> Layout["RoomLayout"]
+        Stage --> Placeholder["PlaceholderSilhouette"]
+        RoomRenderer --> Layout
+        RoomRenderer --> Grid["PixelGrid"]
         Frames --> Compositor
         Frames --> Motion
-        Frames --> Image
+        Frames --> Bitmap["PixelBitmap"]
+        Placeholder --> Bitmap
         Motion --> Hello["HelloMotion"]
         Compositor --> Rig["CharacterRig"]
         Compositor --> Grid
-        Image --> Grid
+        Bitmap --> Grid
     end
 
     subgraph Memory["Memory：只存手機"]
@@ -135,7 +149,7 @@ flowchart TD
     end
 
     Room -. "只讀意圖的型別" .-> Behavior
-    Penguin -. "只讀意圖的型別" .-> Behavior
+    Stage -. "只讀意圖的型別" .-> Behavior
 ```
 
 ## 執行流程
@@ -163,6 +177,7 @@ sequenceDiagram
     Lib-->>CV: 角色，或沒有（顯示灰色剪影）
     CV->>GV: 淡入主遊戲
     GV->>RV: 房間、角色、企鵝位置、意圖（待機）
+    Note over RV: 建立 RoomStage，Metal 畫面出現時把所有圖送進 GPU
     RV->>RV: 鏡頭對準企鵝，每個像素 3pt
 ```
 
@@ -171,50 +186,54 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     actor Owner as 主人
-    participant PV as PenguinView
     participant RV as RoomView
+    participant St as RoomStage
     participant GV as GameView
     participant Log as EventLog
     participant B as PenguinBehavior
+    participant Loop as GameLoop
 
-    Owner->>PV: 點企鵝
-    PV->>RV: 被點了
-    RV->>RV: 重設閒置計時
+    Owner->>RV: 點一下
+    RV->>St: 打中企鵝了嗎？
+    St-->>RV: 打中了（並重設閒置計時）
     RV->>GV: 被點了
     GV->>Log: 記下「主人點了這隻」
     GV->>B: 收到「被點」
     B-->>GV: 意圖變成「哈囉」
-    Note over GV,PV: SwiftUI 發現意圖變了，往下重畫
     GV->>RV: 意圖：哈囉
-    RV->>PV: 意圖：哈囉
-    PV->>PV: 播哈囉：每秒 20 次取出預先算好的下一格（共 2.8 秒）
-    PV->>GV: 播完了（經過 RoomView）
+    RV->>St: 開始播哈囉
+    St->>Loop: 有變化，醒來
+    loop 每一格（跟著螢幕更新）
+        Loop->>St: 現在第幾格？要重畫嗎？
+        Loop->>Loop: 有變才畫（哈囉每秒換 20 次圖）
+    end
+    St-->>Loop: 播完了
+    Loop->>GV: 播完了（經過 RoomView）
     GV->>B: 收到「播完」
     B-->>GV: 意圖回到「待機」
+    Note over Loop: 沒有東西在動，暫停省電
 ```
 
 ### 拖曳與捏合
 
-都只在 `RoomView` 裡處理，不經過 `Behavior` 與 `Memory`。
+都在 `RoomStage` 裡處理，不經過 `Behavior` 與 `Memory`。
 
 ```mermaid
 sequenceDiagram
     actor Owner as 主人
     participant RV as RoomView
-    participant Cam as RoomCamera
-    participant Zoom as RoomZoom
+    participant St as RoomStage
+    participant Loop as GameLoop
 
-    Owner->>RV: 拖曳空地
-    RV->>Cam: 移動這一下的距離
-    Cam-->>RV: 新的中心（不超出房間）
-    Owner->>RV: 雙指捏合
-    RV->>Zoom: 限制縮放範圍、算新的中心
-    Zoom-->>RV: 新的縮放與中心
+    Owner->>RV: 拖曳空地或雙指捏合
+    RV->>St: 這一下移了多少、放大多少
+    St->>St: 用 RoomCamera、RoomZoom 算新的鏡頭與縮放
+    St->>Loop: 有變化，醒來重畫
     Owner->>RV: 放開
-    RV->>Zoom: 吸附到整數個螢幕像素
-    Note over RV: 5 秒沒碰
-    loop 每 16 毫秒
-        RV->>Cam: 往企鵝靠近一步
+    RV->>St: 放開（縮放吸附到整數個螢幕像素）
+    Note over Loop: 沒有東西在動，暫停，約定 5 秒後醒來
+    loop 5 秒沒碰之後，每一格
+        Loop->>St: 往企鵝靠近一步
     end
 ```
 
@@ -222,9 +241,9 @@ sequenceDiagram
 
 | [遊戲設計](product/game-design.md)的章節 | 程式 | 已做 | 還沒做 |
 |---|---|---|---|
-| 呈現（像素、等角） | `World/Pixel`、`World/Room` | 正面圖、屋內箱庭、縮放 | 背面、側面、走路 |
+| 呈現（像素、等角） | `World/Pixel`、`World/Room`、`World/Render` | 正面圖、屋內箱庭、縮放、Metal 繪圖 | 背面、側面、走路 |
 | 箱庭 | `World/Room` | 四件色塊家具、鏡頭 | 找路、庭院 |
-| 手勢 | `RoomView`、`PenguinView` | 點一下、拖曳空地、捏合 | 拎起來、抱抱 |
+| 手勢 | `RoomView`、`RoomStage` | 點一下、拖曳空地、捏合 | 拎起來、抱抱 |
 | 行為與一天的節奏 | `Behavior` | 待機、哈囉 | 閒晃、睡覺、依權重反應、日夜 |
 | 兩隻 | － | － | 第二隻、一起行動、鬥嘴 |
 | 不在時的痕跡 | `Memory` | 記下點擊 | 補算小事、回來看得到 |
