@@ -82,7 +82,6 @@ A 是箱庭生活，App 不接 AI；B 是聊天靈魂，App 開始接 AI。
 | 什麼時候 | 要決定什麼 |
 |---|---|
 | 有空時 | `penguin-family` 是正式 App 名稱，還是開發代號 |
-| 有空時 | commit 裡的 email 是公開的：是否改用 GitHub 的 noreply 信箱 |
 | 有空時 | 公開 repo 目前沒有授權條款（LICENSE）：是否要加 |
 | 有空時 | 看過我加的底線是否同意：[語氣底線](.claude/rules/character-voice.md)、[安全與隱私底線](.claude/rules/safety-privacy.md) |
 | App 原型跑起來後 | 角色走像素或 3D：走像素要重新檢視 [ADR 0001](docs/adr/0001-realitykit-swiftui.md) 的真 3D 前提（2026-11-11 先不決定，畫面先用像素原型） |

@@ -47,3 +47,4 @@ API 金鑰、權杖、密碼、憑證與私鑰只留在本機被 `.gitignore` �
 | 想質疑或推翻技術、資料、造型的決定 | [docs/adr/](docs/adr/) |
 | 重新評估素材工具或引擎 | [docs/research/asset-and-engine.md](docs/research/asset-and-engine.md) |
 | 碰 AI 費用、法規、上架議題 | [docs/research/compliance-and-ai.md](docs/research/compliance-and-ai.md) |
+| commit 前、碰簽署或金鑰 | [docs/research/public-repo-security.md](docs/research/public-repo-security.md) |
