@@ -27,9 +27,9 @@ App 分三層，像 Vue 的「props 往下、events 往上」：
 | 檔案 | 職責 |
 |---|---|
 | [PenguinFamilyApp.swift](../ios/PenguinFamily/PenguinFamilyApp.swift) | App 進入點：開事件紀錄的資料庫（打不開就改用暫存，企鵝照樣能用），放上 `ContentView`。 |
-| [ContentView.swift](../ios/PenguinFamily/ContentView.swift) | 先顯示載入畫面，在背景做初始化（載入角色、預先算好每一格），完成後淡入主遊戲。新增的初始化放在這裡的 `load()`。 |
+| [ContentView.swift](../ios/PenguinFamily/ContentView.swift) | 先顯示載入畫面，在背景做初始化（載入角色、預先算好每一格、打開事件紀錄），完成後淡入主遊戲。新增的初始化放在這裡的 `load()`。 |
 | [LoadingView.swift](../ios/PenguinFamily/LoadingView.swift) | 載入畫面：和箱庭外面同一個底色，三個像素方塊輪流亮。暫時的樣子。 |
-| [GameView.swift](../ios/PenguinFamily/GameView.swift) | 主遊戲的接線員：持有狀態機與企鵝位置；主人點擊時先記進事件紀錄，再交給狀態機。 |
+| [GameView.swift](../ios/PenguinFamily/GameView.swift) | 主遊戲的接線員：持有狀態機與企鵝位置；主人點擊時先交給狀態機，再把事件丟給事件紀錄在背景寫入。 |
 
 ### World：畫面
 
@@ -79,7 +79,7 @@ App 分三層，像 Vue 的「props 往下、events 往上」：
 | 檔案 | 職責 |
 |---|---|
 | [EventRecord.swift](../ios/PenguinFamily/Memory/EventRecord.swift) | 一筆事件的資料格式：什麼時候、什麼事、哪一隻。事件種類存字串，之後新增種類不用搬資料。 |
-| [EventLog.swift](../ios/PenguinFamily/Memory/EventLog.swift) | 開資料庫（關閉 iCloud 同步）、寫入事件、讀最近幾筆。 |
+| [EventLog.swift](../ios/PenguinFamily/Memory/EventLog.swift) | 在背景寫入的事件紀錄（`ModelActor`）：開資料庫（關閉 iCloud 同步）、預熱、寫入事件、讀最近幾筆。一律用 `open(_:)` 在背景建立。 |
 
 ### 資源（不進 git）
 
@@ -94,7 +94,7 @@ App 分三層，像 Vue 的「props 往下、events 往上」：
 | [PenguinDisplayTests.swift](../ios/PenguinFamilyTests/PenguinDisplayTests.swift) | 哈囉時間軸、顏色轉換、找角色包。 |
 | [CharacterFramesTests.swift](../ios/PenguinFamilyTests/CharacterFramesTests.swift) | 預先算好的每一格和當場合成逐像素相同、超出範圍顯示站好、記憶體估算。 |
 | [PenguinBehaviorTests.swift](../ios/PenguinFamilyTests/PenguinBehaviorTests.swift) | 狀態機的轉換。 |
-| [EventLogTests.swift](../ios/PenguinFamilyTests/EventLogTests.swift) | 事件紀錄，每個測試用自己的記憶體資料庫。 |
+| [EventLogTests.swift](../ios/PenguinFamilyTests/EventLogTests.swift) | 事件紀錄，每個測試用自己的記憶體資料庫；寫入不在主執行緒。 |
 | [RoomTests.swift](../ios/PenguinFamilyTests/RoomTests.swift) | 房間擺放檢查、等角換算、背景與家具的畫法、前後順序。 |
 | [RoomCameraTests.swift](../ios/PenguinFamilyTests/RoomCameraTests.swift) | 鏡頭範圍、對齊像素、慢慢靠近。 |
 | [RoomZoomTests.swift](../ios/PenguinFamilyTests/RoomZoomTests.swift) | 縮放範圍、吸附、手指下那一點不動。 |

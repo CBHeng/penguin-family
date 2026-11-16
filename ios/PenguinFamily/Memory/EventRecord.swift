@@ -4,14 +4,14 @@ import SwiftData
 /// 事件紀錄裡的一種事。
 ///
 /// 存進資料庫的是 `rawValue`，改名會讓舊紀錄讀不到，所以只新增、不改既有的值。
-enum EventKind: String, Sendable, CaseIterable {
+nonisolated enum EventKind: String, Sendable, CaseIterable {
     /// 主人點了企鵝一下（不論企鵝當下有沒有回應）。
     case ownerTapped
 }
 
 /// 事件紀錄（Event Log）的一筆：箱庭裡發生過的一件事。只存在手機上（ADR 0003）。
 @Model
-final class EventRecord {
+nonisolated final class EventRecord {
     var occurredAt: Date
     /// `EventKind` 的 rawValue；存字串，之後新增種類不用遷移資料庫。
     var kindRawValue: String
