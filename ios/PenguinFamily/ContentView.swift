@@ -5,12 +5,12 @@ import SwiftUI
 ///
 /// 作者 2026-11-16 決定：用首次載入換遊戲中的順暢，但初始化不能卡住啟動。
 /// iOS 會強制關掉啟動太久的 App，所以第一個畫面要馬上出來，費時的工作在背景做（見架構的「技術取捨」）。
-/// 背景做的事：載入角色包、預先算好每一格、打開事件紀錄的資料庫。之後新增的初始化也放在 `load()`。
+/// 背景做的事：載入一家的角色包、預先算好每一格、打開事件紀錄的資料庫。之後新增的初始化也放在 `load()`。
 struct ContentView: View {
     private enum Phase {
         case loading
-        /// 載入完成；角色是 nil 表示沒有角色包。
-        case ready(LoadedCharacter?, EventLog)
+        /// 載入完成；一家的每一隻，nil 表示那一隻沒有角色包。
+        case ready([LoadedCharacter?], EventLog)
     }
 
     @Environment(\.modelContext) private var modelContext
@@ -22,8 +22,8 @@ struct ContentView: View {
             case .loading:
                 LoadingView()
                     .transition(.opacity)
-            case .ready(let character, let events):
-                GameView(character: character, events: events)
+            case .ready(let family, let events):
+                GameView(family: family, events: events)
                     .transition(.opacity)
             }
         }
@@ -32,10 +32,10 @@ struct ContentView: View {
 
     private func load() async {
         // 兩件事同時在背景做
-        async let character = CharacterPackLibrary.loadFirstInBackground()
+        async let family = CharacterPackLibrary.loadFamilyInBackground()
         let events = await EventLog.open(modelContext.container)
         await events.warmUp()
-        let loaded = await character
+        let loaded = await family
         withAnimation(.easeOut(duration: 0.25)) {
             phase = .ready(loaded, events)
         }
