@@ -41,9 +41,26 @@ nonisolated enum CharacterPackLibrary {
                                frames: CharacterFrames(compositor: compositor))
     }
 
-    /// 在背景載入第一隻能用的角色（含預先算好每一格），不卡住畫面。
-    static func loadFirstInBackground(in root: URL? = bundledRoot) async -> LoadedCharacter? {
-        await Task.detached(priority: .userInitiated) { loadFirst(in: root) }.value
+    /// 一家有幾隻企鵝。
+    static let familySize = 2
+
+    /// 一家的每一隻，依角色包資料夾名稱排序：角色包不夠時，缺的位置是 nil（顯示灰色剪影）；多的角色包不用。
+    static func loadFamily(in root: URL? = bundledRoot) -> [LoadedCharacter?] {
+        var family: [LoadedCharacter?] = []
+        for pack in packs(in: root) where family.count < familySize {
+            do {
+                family.append(try load(pack))
+            } catch {
+                // 錯誤內容可能含檔案路徑（帶角色 id），系統日誌預設遮蔽
+                log.error("角色包載入失敗：\(String(describing: error), privacy: .private)")
+            }
+        }
+        return family + Array(repeating: nil, count: familySize - family.count)
+    }
+
+    /// 在背景載入一家（含預先算好每一格），不卡住畫面。
+    static func loadFamilyInBackground(in root: URL? = bundledRoot) async -> [LoadedCharacter?] {
+        await Task.detached(priority: .userInitiated) { loadFamily(in: root) }.value
     }
 
     /// 載入第一隻能用的角色；全部壞掉或沒有角色包時回傳 nil。

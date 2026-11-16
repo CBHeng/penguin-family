@@ -5,7 +5,8 @@ import SwiftUI
 /// 把 Metal 的畫面放進 SwiftUI。畫面本身不會移動，鏡頭、縮放都在繪圖時處理。
 struct MetalRoomView: UIViewRepresentable {
     let stage: RoomStage
-    var onMotionFinished: () -> Void
+    /// 某隻企鵝的動作播完了（企鵝編號）。
+    var onMotionFinished: (Int) -> Void
 
     func makeCoordinator() -> GameLoop {
         GameLoop(stage: stage)
@@ -42,7 +43,7 @@ struct MetalRoomView: UIViewRepresentable {
 /// `RoomStage` 一有變化就叫醒它；閒置等待鏡頭回去時，到時間再醒來。
 final class GameLoop: NSObject {
     let stage: RoomStage
-    var onMotionFinished: () -> Void = {}
+    var onMotionFinished: (Int) -> Void = { _ in }
     private weak var view: MTKView?
     private var renderer: SpriteRenderer?
     private var link: CADisplayLink?
@@ -92,7 +93,7 @@ final class GameLoop: NSObject {
         defer { PerfSignposts.signposter.endInterval("frame", frame) }
         let now = CACurrentMediaTime()
         let tick = PerfSignposts.measure("update") { stage.update(now: now) }
-        if tick.motionFinished { onMotionFinished() }
+        for penguin in tick.motionFinished { onMotionFinished(penguin) }
         if tick.draw { PerfSignposts.measure("draw") { view?.draw() } }
         guard !tick.keepRunning else { return }
         link.isPaused = true

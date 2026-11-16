@@ -29,7 +29,7 @@ penguin-family/                    公開 repo
 
 ## 模組邊界
 
-- **`Behavior` 只輸出意圖，`World` 負責呈現。** `Behavior` 不匯入任何繪圖框架，所以可以單獨測試，換畫面技術時也能沿用。目前的 `PenguinBehavior` 是最小狀態機（2026-11-16）：待機 →（主人點一下）→ 哈囉 →（`World` 回報播完）→ 待機；哈囉中再點會被忽略。動作播多久由 `World` 決定，`Behavior` 不處理時間。
+- **`Behavior` 只輸出意圖，`World` 負責呈現。** `Behavior` 不匯入任何繪圖框架，所以可以單獨測試，換畫面技術時也能沿用。目前的 `PenguinBehavior` 是最小狀態機：待機 →（主人點一下）→ 哈囉 →（`World` 回報播完）→ 待機；哈囉中再點會被忽略。每隻企鵝一個，`GameView` 依企鵝編號分給各自的狀態機。動作播多久由 `World` 決定，`Behavior` 不處理時間。
 - **`DialogueEngine` 是台詞來源的 protocol。** 路線一用 `ScriptedEngine`，路線二加 `CloudEngine`。決策原因見 [ADR 0002](adr/0002-hybrid-soul-engine.md)。
 - **箱庭與聊天透過事件紀錄連接。** 箱庭寫入發生的事，聊天讀取後才能提到；聊天再把主人的心情和共同回憶寫回，影響箱庭。路線一就要記下事件，避免之後重工。
 - **`CharacterPack` 把造型與個性資料化。** 換造型不用改程式，原因見 [ADR 0004](adr/0004-plush-likeness-private-use.md)。
@@ -40,7 +40,7 @@ penguin-family/                    公開 repo
 - **事件紀錄目前只記「主人點了企鵝」**：`Memory/EventLog` 用 SwiftData 存在手機上，明確關閉 CloudKit 同步；換機與備份到 B1 再決定。
   - **在背景寫入**（作者 2026-11-16 決定）：`EventLog` 是 SwiftData 的 `ModelActor`，點擊時企鵝先反應，事件丟給它在背景存檔，不等存完；每件都存，不批次。時間在點的當下取，所以順序正確。外面拿到的是複製出來的 `LoggedEvent`。
   - **一律用 `EventLog.open(_:)` 在背景建立**：從主執行緒直接建立時，寫入會跟著在主執行緒做（2026-11-16 模擬器實測），背景寫入就失效。載入畫面期間先 `warmUp()` 打開資料庫。
-  - 每次點擊都記，包含哈囉中被忽略的點擊；記下是哪一隻（角色包 id）。事件種類存字串，之後新增種類不用遷移資料庫；舊版本讀到不認得的種類會略過。資料庫打不開時改用暫存，企鵝照樣能用。
+  - 每次點擊都記，包含哈囉中被忽略的點擊；記下是哪一隻（角色包 id；灰色剪影用 `placeholder-<第幾隻>`）。事件種類存字串，之後新增種類不用遷移資料庫；舊版本讀到不認得的種類會略過。資料庫打不開時改用暫存，企鵝照樣能用。
 - **日誌不寫角色 id 與內容**：錯誤訊息可能含檔案路徑（帶角色 id），用 `privacy: .private` 讓系統日誌預設遮蔽。
 
 ## 技術取捨
@@ -82,7 +82,7 @@ penguin-family/                    公開 repo
 - **合成的對照規格**：私有素材 repo 匯出程式裡的 `compose_from_rig()` 只用 `rig.json` 合成，匯出時會和原本的動作程式逐格比對；Swift 版 `World/Pixel/RigCompositor` 照它實作。
 - **箱庭（等角）**：`World/Room/`。`RoomLayout` 是邏輯：地板格子、家具佔用的格子與高度、牆上的東西、擺放檢查，不管畫面。`IsoProjection` 把格子 (i, j) 與高度換算成像素（每格 32×16，2:1 斜率）。`RoomRenderer` 畫背景（牆、地板、窗戶）與每件家具的色塊盒子，並依「最靠近主人的角」排前後。找路與行為只用格子座標，換畫法時不受影響。
 - **鏡頭與縮放**：`RoomCamera` 記畫面中央對著箱庭的哪一點（箱庭像素），限制在範圍內；`RoomZoom` 決定每個像素幾 pt（最大 3pt，最小房間左右塞滿畫面），兩者都是純數學、有單元測試。畫面左上角對齊螢幕實體像素（依 `displayScale`），畫面跟著手指走又不糊；所有東西放在同一個像素格子上，彼此仍對齊。捏合時連續縮放，放開後吸附到整數個實體像素，讓每個像素一樣大。
-- **箱庭的即時狀態**：`RoomStage` 持有鏡頭、縮放、企鵝位置與正在播的動作；決定每一格要畫哪些圖（依「最靠近主人」排前後）、點擊打中了誰（觸控範圍是整張企鵝圖）、要不要重畫。純邏輯，時間由外面傳入，所以「閒置 5 秒後鏡頭回去」「哈囉播到第幾格」都能在測試裡用假時間驗證。手勢與意圖由 `RoomView`（SwiftUI）交給它。
+- **箱庭的即時狀態**：`RoomStage` 持有鏡頭、縮放，以及每隻企鵝的位置與正在播的動作；決定每一格要畫哪些圖（依「最靠近主人」排前後）、點到哪一隻（觸控範圍是整張企鵝圖，重疊時前面那隻優先）、要不要重畫。閒置後鏡頭回到所有企鵝的中點。純邏輯，時間由外面傳入，所以「閒置 5 秒後鏡頭回去」「哈囉播到第幾格」都能在測試裡用假時間驗證。手勢與意圖由 `RoomView`（SwiftUI）交給它。
 - **Metal 繪圖**（`World/Render/`，[ADR 0006](adr/0006-metal-rendering.md)）：
   - `SpriteRenderer`：載入時把所有圖（背景、家具、企鵝每一格）送進 GPU，之後每一格照 `RoomStage` 的清單貼圖。貼圖存原始 RGBA，畫面標成 sRGB，顏色和調色盤一致；取最近的像素、不平滑。shader 在 `Sprites.metal`。
   - `GameLoop`（在 `MetalRoomView`）：用 `CADisplayLink` 跟著螢幕更新，最高到手機支援的更新率（120Hz 要 Info.plist 的 `CADisableMinimumFrameDurationOnPhone`，放在 `ios/Config/PenguinFamily-Info.plist`）。每一格問 `RoomStage` 有沒有變化，有才畫；沒東西在動時暫停省電，需要時（例如 5 秒後鏡頭回去）再醒來。
@@ -90,7 +90,7 @@ penguin-family/                    公開 repo
   - 建置需要 Metal Toolchain（Xcode 26 起另外下載，見 ADR 0006）。
   - **量測點**（`PerfSignposts`，常駐）：每一格、`RoomStage` 計算、畫、等畫布、送出指令、點擊處理都有 signpost，在 Instruments 的 Points of Interest 看。2026-11-16 iPhone 11 正式版 40 秒、1,069 格：一格中位 1.37 毫秒、最慢 5.84 毫秒（預算 16.7 毫秒）；最慢的是暫停後醒來的第一格，慢在等畫布（4 毫秒），所以閒置暫停值得保留。
 - **播放**：哈囉以每秒 20 格播放，時間軸 `HelloMotion` 照私有素材 repo 的 `hello_pose()`，兩隻共用。`RoomStage` 照 `Behavior` 的意圖選動作，播完經 `GameLoop` 回報給 `Behavior`。
-- **動作與預先算好的格子**（作者 2026-11-16 決定）：動作是資料（`Motion`：每秒幾格、共幾格、第幾格的姿勢），`Motion.all` 列出所有動作。載入角色時，`CharacterFrames` 把站好與每個動作的每一格都先合成好；播放時只取出來貼，拖曳重畫時也不重新合成。2026-11-16 在 Mac（M4 Pro）上量，一格合成約 0.09 毫秒、44×45 像素約 7.9KB；哈囉 56 格約 0.44MB。A1 全部動作都存起來的推估約 10MB 以內（假設兩隻、各約 10 個動作、每個約 60 格）。動作多到打開 App 明顯變慢時，再改成背景算或第一次播才算。跟著互動即時變化的姿勢（例如抱抱時壓扁）不預先算，直接用 `RigCompositor` 合成。`CharacterPackLibrary` 列出 App 裡的角色包，載入第一隻能用的；沒有或全壞時顯示灰色占位剪影。
+- **動作與預先算好的格子**（作者 2026-11-16 決定）：動作是資料（`Motion`：每秒幾格、共幾格、第幾格的姿勢），`Motion.all` 列出所有動作。載入角色時，`CharacterFrames` 把站好與每個動作的每一格都先合成好；播放時只取出來貼，拖曳重畫時也不重新合成。2026-11-16 在 Mac（M4 Pro）上量，一格合成約 0.09 毫秒、44×45 像素約 7.9KB；哈囉 56 格約 0.44MB。A1 全部動作都存起來的推估約 10MB 以內（假設兩隻、各約 10 個動作、每個約 60 格）。動作多到打開 App 明顯變慢時，再改成背景算或第一次播才算。跟著互動即時變化的姿勢（例如抱抱時壓扁）不預先算，直接用 `RigCompositor` 合成。`CharacterPackLibrary` 依資料夾名稱載入一家（兩隻）；角色包不夠或壞掉時，缺的那隻顯示灰色占位剪影。
 - **取整要和 Python 相同**：Python 3 的 `round()` 遇到 .5 取最近的偶數，Swift 的 `rounded()` 預設遠離 0，所以 Swift 版明確用 `.toNearestOrEven`（2026-11-16 查證：[SE-0113](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0113-rounding-functions-on-floatingpoint.md)、[Apple `rounded(_:)`](https://developer.apple.com/documentation/swift/double/rounded(_:))、[Python 文件討論](https://www.python.org/pipermail/docs/2013-February/012898.html)）。
 
 ## 測試

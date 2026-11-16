@@ -90,12 +90,23 @@ struct PenguinDisplayTests {
         #expect(CharacterPackLibrary.loadFirst(in: root) == nil)
     }
 
-    @Test func loadsInBackgroundWithFramesReady() async throws {
+    @Test func familyLoadsInBackgroundWithFramesReady() async throws {
         let root = try Self.makeRoot(["a": RigCompositorTests.fakeJSON])
-        let loaded = try #require(await CharacterPackLibrary.loadFirstInBackground(in: root))
-        #expect(loaded.id == "a")
+        let family = await CharacterPackLibrary.loadFamilyInBackground(in: root)
+        // 只有一個角色包：第一隻是它，第二隻是灰色剪影
+        #expect(family.count == CharacterPackLibrary.familySize)
+        let first = try #require(family[0])
+        #expect(first.id == "a")
+        #expect(family[1] == nil)
         // 進主遊戲前，每一格都已經算好
-        #expect(loaded.frames.imageCount == 1 + Motion.hello.frameCount)
-        #expect(await CharacterPackLibrary.loadFirstInBackground(in: nil) == nil)
+        #expect(first.frames.imageCount == 1 + Motion.hello.frameCount)
+    }
+
+    @Test func familyIsInPackOrderSkipsBrokenAndIgnoresExtra() throws {
+        let fake = RigCompositorTests.fakeJSON
+        let root = try Self.makeRoot(["c": fake, "a": fake, "b": "{ not json", "d": fake])
+        let ids = CharacterPackLibrary.loadFamily(in: root).map { $0?.id }
+        #expect(ids == ["a", "c"])      // 依名稱排序、跳過壞的 b、多的 d 不用
+        #expect(CharacterPackLibrary.loadFamily(in: nil).allSatisfy { $0 == nil })
     }
 }
