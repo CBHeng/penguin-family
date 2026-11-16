@@ -1,6 +1,8 @@
 # 架構
 
-程式與這份文件不同時，以程式為準並更新這份文件。2026-11-16「App 架構先行」完成時，已實作的是 `World`、`Behavior`、`Memory` 的最小版本，以及 `Resources` 的角色包；其餘模組還是規劃。
+程式與這份文件不同時，以程式為準並更新這份文件。這份寫「為什麼這樣切」；目前有哪些檔案、各自負責什麼、怎麼串起來，見[程式地圖](code-map.md)。
+
+2026-11-16 已實作的是 `World`、`Behavior`、`Memory` 的最小版本，以及 `Resources` 的角色包；下面目錄圖標「未建立」的還是規劃。
 
 專案名稱 `PenguinFamily`，最低支援 iOS 18；App 程式放在根目錄的 `ios/`（作者 2026-11-11 決定）。專案層級的建置設定在 `ios/Config/`，簽署用的 Team ID 不進 git（見[實機測試](research/device-testing.md)）。
 
@@ -10,17 +12,18 @@ penguin-family/                    公開 repo
 │  ├─ PenguinFamily.xcodeproj
 │  ├─ Config/        Base.xcconfig；Signing.local.xcconfig（不進 git）
 │  ├─ PenguinFamily/
-│  │  ├─ App/        SwiftUI 外殼、抱抱介面、Chat/ 聊天介面
+│  │  ├─ PenguinFamilyApp.swift、ContentView.swift   App 外殼
+│  │  ├─ App/        抱抱介面、Chat/ 聊天介面（未建立；外殼目前在根目錄）
 │  │  ├─ World/      畫面：箱庭、鏡頭、企鵝的呈現
 │  │  ├─ Behavior/   行為狀態機與隨機事件（純 Swift）
-│  │  ├─ Soul/       角色聖經、台詞選擇、DialogueEngine
+│  │  ├─ Soul/       角色聖經、台詞選擇、DialogueEngine（未建立）
 │  │  ├─ Memory/     本機關係狀態、事件紀錄、聊天內容與共同回憶（SwiftData）
-│  │  ├─ Activity/   A3 才加入的步數連動
-│  │  ├─ Feel/       觸覺與音效
+│  │  ├─ Activity/   步數連動（未建立，A3）
+│  │  ├─ Feel/       觸覺與音效（未建立）
 │  │  └─ Resources/  CharacterPacks.bundle/<角色>/rig.json、CharacterPacks.bundle/duo.json（不進 git）
 │  ├─ PenguinFamilyTests/   單元測試
-│  └─ PenguinFamilyWidget/  A3 才加入
-├─ backend/                       B1 才加入的薄後端
+│  └─ PenguinFamilyWidget/  小工具（未建立，A3）
+├─ backend/                       薄後端（未建立，B1）
 └─ penguin-family-assets/         私有 repo，不進公開 repo（見 ADR 0004）
 ```
 
@@ -68,4 +71,5 @@ penguin-family/                    公開 repo
 - **合成規則**（`RigCompositorTests`）：用測試裡手寫的 10x10 假角色，永遠會跑。測靜止時和手算結果相同、跟著頭的部件只移動不轉、手超過角度換成舉手圖、.5 取偶數、格式錯誤會被拒絕。
 - **和 Python 逐格相同**（`CharacterPackParityTests`）：私有素材 repo 的匯出程式把 `rig.json` 和每個動作的對照檔 `<動作>.golden.json` 寫到 `PenguinFamilyTests/CharacterPacks.bundle/<角色>/`（不進 git；跑測試時會跟著測試 bundle 放進 App 的 `PlugIns/`，一般建置的 App 不含，2026-11-16 實測 Release 建置）。測靜止時和定稿正面圖相同、動作每一格和 Python 相同，App 用的哈囉時間軸每一格的姿勢也和 Python 相同。沒有角色包時自動跳過。
 - **事件紀錄**（`EventLogTests`）：每個測試用自己的記憶體資料庫，不碰手機上的資料。
+- **程式地圖**（`CodeMapTests`）：[程式地圖](code-map.md)列的檔案和實際的 `.swift` 檔一致（作者 2026-11-16 決定）。只檢查有沒有列，內容對不對靠人。測試在模擬器上讀 Mac 上的 repo，實機上跑不了。
 - **顯示需要的部分**（`PenguinDisplayTests`）：哈囉時間軸頭尾都是站好、顏色轉換精確、找角色包（沒有、壞掉、只有部分能用）。點擊與動畫的手感不在單元測試裡，以模擬器與實機確認。
