@@ -5,6 +5,13 @@ import os
 ///
 /// 角色包放在 `CharacterPacks.bundle/<角色>/rig.json`，不進 git；乾淨 clone 下來沒有角色包，這時回傳空的結果，
 /// 畫面改顯示占位圖形。角色 id 只從資料夾讀，不寫在程式裡（角色名稱只能出現在私有 repo）。
+/// 載入好的一隻角色。
+nonisolated struct LoadedCharacter: Sendable {
+    /// 角色包的資料夾名稱，可能帶有角色名稱：只在執行時使用、存在手機上，不寫進程式或日誌。
+    let id: String
+    let compositor: RigCompositor
+}
+
 nonisolated enum CharacterPackLibrary {
     private static let log = Logger(subsystem: "PenguinFamily", category: "CharacterPack")
 
@@ -24,18 +31,20 @@ nonisolated enum CharacterPackLibrary {
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
     }
 
-    static func load(_ pack: URL) throws -> RigCompositor {
+    static func load(_ pack: URL) throws -> LoadedCharacter {
         let data = try Data(contentsOf: pack.appending(path: "rig.json"))
-        return try RigCompositor(rig: JSONDecoder().decode(CharacterRig.self, from: data))
+        let compositor = try RigCompositor(rig: JSONDecoder().decode(CharacterRig.self, from: data))
+        return LoadedCharacter(id: pack.lastPathComponent, compositor: compositor)
     }
 
     /// 載入第一隻能用的角色；全部壞掉或沒有角色包時回傳 nil。
-    static func loadFirst(in root: URL? = bundledRoot) -> RigCompositor? {
+    static func loadFirst(in root: URL? = bundledRoot) -> LoadedCharacter? {
         for pack in packs(in: root) {
             do {
                 return try load(pack)
             } catch {
-                log.error("角色包載入失敗：\(String(describing: error), privacy: .public)")
+                // 錯誤內容可能含檔案路徑（帶角色 id），系統日誌預設遮蔽
+                log.error("角色包載入失敗：\(String(describing: error), privacy: .private)")
             }
         }
         return nil

@@ -81,7 +81,8 @@ struct PenguinDisplayTests {
     @Test func skipsBrokenPackAndLoadsNext() throws {
         let root = try Self.makeRoot(["a": "{ not json", "b": RigCompositorTests.fakeJSON])
         let loaded = try #require(CharacterPackLibrary.loadFirst(in: root))
-        #expect(loaded.rig.canvas.width == 10)
+        #expect(loaded.id == "b")
+        #expect(loaded.compositor.rig.canvas.width == 10)
     }
 
     @Test func allBrokenMeansPlaceholder() throws {

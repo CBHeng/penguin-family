@@ -33,6 +33,8 @@ penguin-family/                    公開 repo
 - **程式不寫死角色 id。** 角色包的資料夾名稱就是角色 id，可能帶有角色名稱，而角色名稱只能出現在私有 repo；App 要列出 `CharacterPacks.bundle/` 底下有哪些角色，不在程式或測試裡寫死。
 - **人設是資料。** 台詞與個性放 JSON，作者不改程式也能調教。填好的角色聖經是權威來源（位置見[範本](characters/bible.md)），JSON 依它產生；內容有出入時，以角色聖經為準。兩隻共有的關係資料放 `duo.json`。
 - **聊天內容與共同回憶由 `Memory` 管理，只存手機。** 後端只轉發，原因見 [ADR 0003](adr/0003-on-device-memory.md)。
+- **事件紀錄目前只記「主人點了企鵝」**（2026-11-16）：`Memory/EventLog` 用 SwiftData 存在手機上，明確關閉 CloudKit 同步；換機與備份到 B1 再決定。每次點擊都記，包含哈囉中被忽略的點擊；記下是哪一隻（角色包 id）。事件種類存字串，之後新增種類不用遷移資料庫；舊版本讀到不認得的種類會略過。資料庫打不開時改用暫存，企鵝照樣能用。
+- **日誌不寫角色 id 與內容**：錯誤訊息可能含檔案路徑（帶角色 id），用 `privacy: .private` 讓系統日誌預設遮蔽。
 
 ## World：目前的像素原型
 
@@ -62,4 +64,5 @@ penguin-family/                    公開 repo
 
 - **合成規則**（`RigCompositorTests`）：用測試裡手寫的 10x10 假角色，永遠會跑。測靜止時和手算結果相同、跟著頭的部件只移動不轉、手超過角度換成舉手圖、.5 取偶數、格式錯誤會被拒絕。
 - **和 Python 逐格相同**（`CharacterPackParityTests`）：私有素材 repo 的匯出程式把 `rig.json` 和每個動作的對照檔 `<動作>.golden.json` 寫到 `PenguinFamilyTests/CharacterPacks.bundle/<角色>/`（不進 git；跑測試時會跟著測試 bundle 放進 App 的 `PlugIns/`，一般建置的 App 不含，2026-11-16 實測 Release 建置）。測靜止時和定稿正面圖相同、動作每一格和 Python 相同，App 用的哈囉時間軸每一格的姿勢也和 Python 相同。沒有角色包時自動跳過。
+- **事件紀錄**（`EventLogTests`）：每個測試用自己的記憶體資料庫，不碰手機上的資料。
 - **顯示需要的部分**（`PenguinDisplayTests`）：哈囉時間軸頭尾都是站好、顏色轉換精確、找角色包（沒有、壞掉、只有部分能用）。點擊與動畫的手感不在單元測試裡，以模擬器與實機確認。
