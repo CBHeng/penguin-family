@@ -15,7 +15,7 @@
 3. [x] Claude：私有素材 repo 加上角色包匯出，輸出到 `Resources/CharacterPacks.bundle/`（2026-11-16 完成：部件像素寫進 `rig.json`，匯出時檢查和定稿正面圖、哈囉 56 格都相同；格式見[架構](docs/architecture.md)）
 4. [x] Claude：用 Swift 改寫部件合成，加單元測試（2026-11-16 完成：假資料測規則；有角色包時，靜止姿勢和定稿相同、哈囉 56 格和 Python 逐格相同；沒有角色包時跳過）
 5. [x] Claude：SwiftUI 畫面顯示第一隻，點一下播放「哈囉」；沒有角色包時顯示占位圖形（2026-11-16：模擬器截圖確認像素清楚；哈囉 56 格與 Python 逐格相同；作者在模擬器確認點擊播放正常；實機手感待確認）
-6. [ ] Claude：`Behavior` 最小狀態機（待機 → 被點 → 哈囉 → 待機），只輸出意圖，加測試
+6. [x] Claude：`Behavior` 最小狀態機（待機 → 被點 → 哈囉 → 待機），只輸出意圖，加測試（2026-11-16 完成：`PenguinBehavior`，6 個測試；「哈囉中再點不重來」從畫面移到 `Behavior`）
 7. [ ] Claude：`Memory` 用 SwiftData 記錄「被點了一下」這類事件
 8. [ ] Claude：`Soul` 只建 `DialogueEngine` 介面骨架，不寫台詞
 9. [ ] Claude：在模擬器跑起來截圖給你看，確認放大後不糊；更新架構文件

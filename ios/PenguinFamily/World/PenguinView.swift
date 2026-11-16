@@ -1,8 +1,14 @@
 import SwiftUI
 
-/// 顯示一隻企鵝；點一下播放「哈囉」。沒有角色包時顯示占位圖形。
+/// 依 `Behavior` 的意圖顯示一隻企鵝並播放動作。
+///
+/// 這裡不決定要做什麼：點擊與「動作播完」都交回給 `Behavior`，再照新的意圖播放。
+/// 沒有角色包時顯示占位圖形。
 struct PenguinView: View {
     let character: RigCompositor?
+    let intent: PenguinBehavior.Intent
+    var onTap: () -> Void = {}
+    var onMotionFinished: () -> Void = {}
     @State private var helloStart: Date?
 
     var body: some View {
@@ -11,14 +17,18 @@ struct PenguinView: View {
                 PixelSprite(grid: character.compose(pose(at: context.date)), colors: character.colors)
             }
             .contentShape(Rectangle())
-            .onTapGesture {
-                // 播放中再點不重來，揮完才能再打招呼
-                if helloStart == nil { helloStart = .now }
+            .onTapGesture { onTap() }
+            .onChange(of: intent, initial: true) { _, intent in
+                helloStart = intent == .hello ? .now : nil
             }
             .task(id: helloStart) {
                 guard helloStart != nil else { return }
-                try? await Task.sleep(for: .seconds(HelloMotion.duration))
-                helloStart = nil
+                do {
+                    try await Task.sleep(for: .seconds(HelloMotion.duration))
+                } catch {
+                    return  // 被取消（例如意圖改變）時不回報播完
+                }
+                onMotionFinished()
             }
             .accessibilityElement()
             .accessibilityAddTraits(.isButton)
@@ -76,5 +86,5 @@ struct PlaceholderPenguin: View {
 }
 
 #Preview("占位") {
-    PenguinView(character: nil)
+    PenguinView(character: nil, intent: .idle)
 }
