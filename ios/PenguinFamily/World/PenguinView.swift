@@ -1,39 +1,49 @@
 import CoreGraphics
 import SwiftUI
 
-/// 依 `Behavior` 的意圖顯示一隻企鵝並播放動作，每個像素固定放大成 `pointsPerPixel`。
+/// 依 `Behavior` 的意圖顯示一隻企鵝並播放動作，每個像素放大成 `pointsPerPixel`。
 ///
 /// 這裡不決定要做什麼：點擊與「動作播完」都交回給 `Behavior`，再照新的意圖播放。
+/// 每一格都是載入角色時預先算好的圖（`CharacterFrames`），播放時只取出來貼。
 /// 沒有角色包時顯示灰色占位剪影，點了也不回應（沒有動作可播）。
 struct PenguinView: View {
-    let character: RigCompositor?
+    let character: CharacterFrames?
     let intent: PenguinBehavior.Intent
     var pointsPerPixel: CGFloat = 3
     var onTap: () -> Void = {}
     var onMotionFinished: () -> Void = {}
-    @State private var helloStart: Date?
+    /// 正在播的動作與開始時間；站著時是 nil。
+    @State private var playing: (motion: Motion, start: Date)?
 
     /// 腳底在圖上的位置（像素），用來把企鵝放到箱庭的某一點。
-    static func anchor(for character: RigCompositor?) -> PixelPoint {
-        guard let pivot = character?.rig.parts["body"]?.pivot else { return PlaceholderSilhouette.anchor }
-        return PixelPoint(x: Int(pivot.x.rounded(.down)), y: Int(pivot.y.rounded(.up)))
+    static func anchor(for character: CharacterFrames?) -> PixelPoint {
+        character?.anchor ?? PlaceholderSilhouette.anchor
+    }
+
+    /// 意圖要播哪個動作；待機不播。
+    static func motion(for intent: PenguinBehavior.Intent) -> Motion? {
+        switch intent {
+        case .idle: nil
+        case .hello: .hello
+        }
     }
 
     var body: some View {
         if let character {
-            TimelineView(.animation(minimumInterval: 1 / HelloMotion.framesPerSecond, paused: helloStart == nil)) { context in
-                PixelImageView(grid: character.compose(pose(at: context.date)), colors: character.colors,
+            TimelineView(.animation(minimumInterval: 1 / (playing?.motion.framesPerSecond ?? 20), paused: playing == nil)) { context in
+                PixelImageView(image: image(of: character, at: context.date),
+                               pixelWidth: character.width, pixelHeight: character.height,
                                pointsPerPixel: pointsPerPixel)
             }
             .contentShape(Rectangle())
             .onTapGesture { onTap() }
             .onChange(of: intent, initial: true) { _, intent in
-                helloStart = intent == .hello ? .now : nil
+                playing = Self.motion(for: intent).map { ($0, .now) }
             }
-            .task(id: helloStart) {
-                guard helloStart != nil else { return }
+            .task(id: playing?.start) {
+                guard let playing else { return }
                 do {
-                    try await Task.sleep(for: .seconds(HelloMotion.duration))
+                    try await Task.sleep(for: .seconds(playing.motion.duration))
                 } catch {
                     return  // 被取消（例如意圖改變）時不回報播完
                 }
@@ -49,11 +59,11 @@ struct PenguinView: View {
         }
     }
 
-    /// 對齊到每秒 20 格，和私有素材 repo 的預覽一致。
-    private func pose(at date: Date) -> RigPose {
-        guard let helloStart else { return .rest }
-        let frame = Int((date.timeIntervalSince(helloStart) * HelloMotion.framesPerSecond).rounded(.down))
-        return HelloMotion.pose(frame: max(0, frame))
+    /// 現在該顯示哪一格；格數對齊動作的每秒格數，和私有素材 repo 的預覽一致。
+    private func image(of character: CharacterFrames, at date: Date) -> CGImage? {
+        guard let playing else { return character.rest }
+        let frame = Int((date.timeIntervalSince(playing.start) * playing.motion.framesPerSecond).rounded(.down))
+        return character.image(playing.motion, frame: max(0, frame))
     }
 }
 

@@ -13,7 +13,7 @@ struct RoomView: View {
     static let returnStep: Double = 0.08
 
     let room: RoomLayout
-    let character: RigCompositor?
+    let character: CharacterFrames?
     /// 企鵝站在地板的哪一點（格）。
     let penguinPosition: TilePosition
     let intent: PenguinBehavior.Intent
@@ -33,7 +33,7 @@ struct RoomView: View {
     /// 1pt 等於幾個螢幕實體像素（iPhone 17 是 3，iPhone 11 是 2）。
     @Environment(\.displayScale) private var displayScale
 
-    init(room: RoomLayout, character: RigCompositor?, penguinPosition: TilePosition, intent: PenguinBehavior.Intent,
+    init(room: RoomLayout, character: CharacterFrames?, penguinPosition: TilePosition, intent: PenguinBehavior.Intent,
          onTap: @escaping () -> Void = {}, onMotionFinished: @escaping () -> Void = {}) {
         self.room = room
         self.character = character

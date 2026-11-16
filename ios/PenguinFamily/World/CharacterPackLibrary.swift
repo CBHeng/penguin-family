@@ -9,7 +9,10 @@ import os
 nonisolated struct LoadedCharacter: Sendable {
     /// 角色包的資料夾名稱，可能帶有角色名稱：只在執行時使用、存在手機上，不寫進程式或日誌。
     let id: String
+    /// 跟著互動即時變化的姿勢用這個當場合成。
     let compositor: RigCompositor
+    /// 預先算好的站好與每個動作的每一格。
+    let frames: CharacterFrames
 }
 
 nonisolated enum CharacterPackLibrary {
@@ -34,7 +37,13 @@ nonisolated enum CharacterPackLibrary {
     static func load(_ pack: URL) throws -> LoadedCharacter {
         let data = try Data(contentsOf: pack.appending(path: "rig.json"))
         let compositor = try RigCompositor(rig: JSONDecoder().decode(CharacterRig.self, from: data))
-        return LoadedCharacter(id: pack.lastPathComponent, compositor: compositor)
+        return LoadedCharacter(id: pack.lastPathComponent, compositor: compositor,
+                               frames: CharacterFrames(compositor: compositor))
+    }
+
+    /// 在背景載入第一隻能用的角色（含預先算好每一格），不卡住畫面。
+    static func loadFirstInBackground(in root: URL? = bundledRoot) async -> LoadedCharacter? {
+        await Task.detached(priority: .userInitiated) { loadFirst(in: root) }.value
     }
 
     /// 載入第一隻能用的角色；全部壞掉或沒有角色包時回傳 nil。

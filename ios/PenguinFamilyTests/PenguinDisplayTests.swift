@@ -89,4 +89,13 @@ struct PenguinDisplayTests {
         let root = try Self.makeRoot(["a": "{ not json"])
         #expect(CharacterPackLibrary.loadFirst(in: root) == nil)
     }
+
+    @Test func loadsInBackgroundWithFramesReady() async throws {
+        let root = try Self.makeRoot(["a": RigCompositorTests.fakeJSON])
+        let loaded = try #require(await CharacterPackLibrary.loadFirstInBackground(in: root))
+        #expect(loaded.id == "a")
+        // 進主遊戲前，每一格都已經算好
+        #expect(loaded.frames.imageCount == 1 + Motion.hello.frameCount)
+        #expect(await CharacterPackLibrary.loadFirstInBackground(in: nil) == nil)
+    }
 }

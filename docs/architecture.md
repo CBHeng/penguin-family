@@ -12,7 +12,7 @@ penguin-family/                    公開 repo
 │  ├─ PenguinFamily.xcodeproj
 │  ├─ Config/        Base.xcconfig；Signing.local.xcconfig（不進 git）
 │  ├─ PenguinFamily/
-│  │  ├─ PenguinFamilyApp.swift、ContentView.swift   App 外殼
+│  │  ├─ PenguinFamilyApp、ContentView、LoadingView、GameView   App 外殼（載入畫面 → 主遊戲）
 │  │  ├─ App/        抱抱介面、Chat/ 聊天介面（未建立；外殼目前在根目錄）
 │  │  ├─ World/      畫面：箱庭、鏡頭、企鵝的呈現
 │  │  ├─ Behavior/   行為狀態機與隨機事件（純 Swift）
@@ -40,6 +40,25 @@ penguin-family/                    公開 repo
 - **事件紀錄目前只記「主人點了企鵝」**（2026-11-16）：`Memory/EventLog` 用 SwiftData 存在手機上，明確關閉 CloudKit 同步；換機與備份到 B1 再決定。每次點擊都記，包含哈囉中被忽略的點擊；記下是哪一隻（角色包 id）。事件種類存字串，之後新增種類不用遷移資料庫；舊版本讀到不認得的種類會略過。資料庫打不開時改用暫存，企鵝照樣能用。
 - **日誌不寫角色 id 與內容**：錯誤訊息可能含檔案路徑（帶角色 id），用 `privacy: .private` 讓系統日誌預設遮蔽。
 
+## 技術取捨
+
+作者 2026-11-16 決定的原則。遇到「快一點」和「省一點」衝突時照這裡判斷；需要討論的情況，先估算用量再找作者。
+
+1. **用首次載入換遊戲中的順暢。** 能事先做的就在載入時做好，玩的時候只取用。
+   - 打開 App 先馬上顯示載入畫面，初始化放到背景，完成後才進入主遊戲（`ContentView`）。原因：iOS 會強制關掉啟動太久的 App（watchdog），Apple 沒有公布確切秒數；WWDC 2019 建議點下圖示後 400 毫秒內畫出第一個畫面（2026-11-16 查證：[WWDC19 Optimizing App Launch](https://nonstrict.eu/wwdcindex/wwdc2019/423)、[Apple：Reducing your app's launch time](https://developer.apple.com/documentation/xcode/reducing-your-app-s-launch-time)）。
+   - 新增的初始化工作放進 `ContentView.load()`，不要放在 App 啟動的同步流程裡。
+2. **適度用記憶體換時間。** 預先算好、快取都可以，但：
+   - 這類記憶體**合計超過 50MB**，先和作者討論。
+   - 用量會**隨內容持續成長**的設計（每多一個動作、一隻角色、一件家具、一個區域就多存一份），即使還沒到 50MB，也要先估算「A1 做完」與「長期」的用量，和作者討論計畫再做。
+   - 用量要量得出來：例如 `CharacterFrames.byteCount`。
+
+目前的用量（2026-11-16，Mac M4 Pro 上量）：
+
+| 項目 | 記憶體 | 載入時間 |
+|---|---|---|
+| 預先算好的格子：一隻、站好＋哈囉 57 張 | 約 0.44MB | 約 6 毫秒 |
+| 箱庭背景與家具圖（12×12 屋內） | 約 0.4MB（推估：384×256 像素的背景圖） | 未量 |
+
 ## World：像素
 
 角色與箱庭走像素，畫面用 SwiftUI 與自寫的部件合成，見 [ADR 0005](adr/0005-pixel-art-swiftui.md)（2026-11-16，取代以真 3D 為前提的 ADR 0001；實機確認後定案）。
@@ -59,7 +78,8 @@ penguin-family/                    公開 repo
 - **合成的對照規格**：私有素材 repo 匯出程式裡的 `compose_from_rig()` 只用 `rig.json` 合成，匯出時會和原本的動作程式逐格比對；Swift 版 `World/Pixel/RigCompositor` 照它實作。
 - **箱庭（等角）**：`World/Room/`。`RoomLayout` 是邏輯：地板格子、家具佔用的格子與高度、牆上的東西、擺放檢查，不管畫面。`IsoProjection` 把格子 (i, j) 與高度換算成像素（每格 32×16，2:1 斜率）。`RoomRenderer` 畫背景（牆、地板、窗戶）與每件家具的色塊盒子，並依「最靠近主人的角」排前後。`RoomView` 把背景、家具與企鵝疊起來，每個像素最大 3pt。找路與行為只用格子座標，換畫法時不受影響。
 - **鏡頭與縮放**：`RoomCamera` 記畫面中央對著箱庭的哪一點（箱庭像素），限制在範圍內；`RoomZoom` 決定每個像素幾 pt（最大 3pt，最小房間左右塞滿畫面），兩者都是純數學、有單元測試。`RoomView` 把整張箱庭反向位移後裁切。位移對齊螢幕實體像素（依 `displayScale`），畫面跟著手指走又不糊；整張一起移動，像素彼此仍對齊。捏合時連續縮放，放開後吸附到整數個實體像素，讓每個像素一樣大。拖曳量用不會動的外框（具名座標空間）量：手勢掛在會移動的背景上，用預設的 `.local` 量會來回閃（2026-11-16 模擬器實測）。
-- **顯示**：`World/PenguinView` 每格先合成原始尺寸的圖，再以整數倍放大、關閉平滑處理（`interpolation(.none)`）。哈囉以每秒 20 格播放，時間軸 `HelloMotion` 照私有素材 repo 的 `hello_pose()`，兩隻共用。`PenguinView` 照 `Behavior` 的意圖播放，點擊與播完都交回 `Behavior`。`CharacterPackLibrary` 列出 App 裡的角色包，載入第一隻能用的；沒有或全壞時顯示灰色占位剪影。
+- **顯示**：`World/PenguinView` 取出原始尺寸的圖，再以整數倍放大、關閉平滑處理（`interpolation(.none)`）。哈囉以每秒 20 格播放，時間軸 `HelloMotion` 照私有素材 repo 的 `hello_pose()`，兩隻共用。
+- **動作與預先算好的格子**（作者 2026-11-16 決定）：動作是資料（`Motion`：每秒幾格、共幾格、第幾格的姿勢），`Motion.all` 列出所有動作。載入角色時，`CharacterFrames` 把站好與每個動作的每一格都先合成好；播放時只取出來貼，拖曳重畫時也不重新合成。2026-11-16 在 Mac（M4 Pro）上量，一格合成約 0.09 毫秒、44×45 像素約 7.9KB；哈囉 56 格約 0.44MB。A1 全部動作都存起來的推估約 10MB 以內（假設兩隻、各約 10 個動作、每個約 60 格）。動作多到打開 App 明顯變慢時，再改成背景算或第一次播才算。跟著互動即時變化的姿勢（例如抱抱時壓扁）不預先算，直接用 `RigCompositor` 合成。`PenguinView` 照 `Behavior` 的意圖播放，點擊與播完都交回 `Behavior`。`CharacterPackLibrary` 列出 App 裡的角色包，載入第一隻能用的；沒有或全壞時顯示灰色占位剪影。
 - **取整要和 Python 相同**：Python 3 的 `round()` 遇到 .5 取最近的偶數，Swift 的 `rounded()` 預設遠離 0，所以 Swift 版明確用 `.toNearestOrEven`（2026-11-16 查證：[SE-0113](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0113-rounding-functions-on-floatingpoint.md)、[Apple `rounded(_:)`](https://developer.apple.com/documentation/swift/double/rounded(_:))、[Python 文件討論](https://www.python.org/pipermail/docs/2013-February/012898.html)）。
 
 ## 測試

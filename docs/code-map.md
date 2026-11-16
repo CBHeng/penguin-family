@@ -7,7 +7,7 @@
 - **保持同步**：`CodeMapTests` 會檢查每個 `.swift` 檔都列在這份文件裡、這裡列的檔案都存在；新增、刪除或改名檔案時，測試失敗就是提醒你回來更新。內容寫得對不對，還是靠人（作者 2026-11-16 決定）。
 - 圖用 [Mermaid](https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/creating-diagrams)：在 GitHub 上會畫成圖；在終端機裡看到的是原始文字。
 
-最後更新：2026-11-16（A1 第 2 項與雙指縮放完成時）。
+最後更新：2026-11-16（加入載入畫面、動作格式與預先算好的格子）。
 
 ## 一句話看懂
 
@@ -16,7 +16,8 @@ App 分三層，像 Vue 的「props 往下、events 往上」：
 - **`Behavior`** 決定企鵝「想做什麼」，輸出意圖（待機、哈囉）。純 Swift，不碰畫面。
 - **`World`** 把意圖畫出來，並把主人的手勢往上回報。只有這層碰 SwiftUI。
 - **`Memory`** 記下發生過的事，只存在手機上。
-- **`ContentView`** 是接線員：把三層接起來，本身幾乎沒有邏輯，像 Vue 的頁面元件。
+- **`GameView`** 是接線員：把三層接起來，本身幾乎沒有邏輯，像 Vue 的頁面元件。
+- **`ContentView`** 先顯示載入畫面，在背景把角色準備好，再切到 `GameView`（見[架構的技術取捨](architecture.md#技術取捨)）。
 
 ## 檔案
 
@@ -25,14 +26,16 @@ App 分三層，像 Vue 的「props 往下、events 往上」：
 | 檔案 | 職責 |
 |---|---|
 | [PenguinFamilyApp.swift](../ios/PenguinFamily/PenguinFamilyApp.swift) | App 進入點：開事件紀錄的資料庫（打不開就改用暫存，企鵝照樣能用），放上 `ContentView`。 |
-| [ContentView.swift](../ios/PenguinFamily/ContentView.swift) | 接線員：載入角色、持有狀態機與企鵝位置；主人點擊時先記進事件紀錄，再交給狀態機。 |
+| [ContentView.swift](../ios/PenguinFamily/ContentView.swift) | 先顯示載入畫面，在背景做初始化（載入角色、預先算好每一格），完成後淡入主遊戲。新增的初始化放在這裡的 `load()`。 |
+| [LoadingView.swift](../ios/PenguinFamily/LoadingView.swift) | 載入畫面：和箱庭外面同一個底色，三個像素方塊輪流亮。暫時的樣子。 |
+| [GameView.swift](../ios/PenguinFamily/GameView.swift) | 主遊戲的接線員：持有狀態機與企鵝位置；主人點擊時先記進事件紀錄，再交給狀態機。 |
 
 ### World：畫面
 
 | 檔案 | 職責 |
 |---|---|
-| [CharacterPackLibrary.swift](../ios/PenguinFamily/World/CharacterPackLibrary.swift) | 列出 App 裡的角色包，載入第一隻能用的；壞掉的跳過。不寫死角色 id。 |
-| [PenguinView.swift](../ios/PenguinFamily/World/PenguinView.swift) | 一隻企鵝：照意圖播動畫（每秒 20 格），點擊與播完往上回報；沒有角色包時畫灰色剪影。 |
+| [CharacterPackLibrary.swift](../ios/PenguinFamily/World/CharacterPackLibrary.swift) | 列出 App 裡的角色包，載入第一隻能用的（同時預先算好每一格）；壞掉的跳過。不寫死角色 id。 |
+| [PenguinView.swift](../ios/PenguinFamily/World/PenguinView.swift) | 一隻企鵝：照意圖選動作，取出預先算好的圖播放；點擊與播完往上回報；沒有角色包時畫灰色剪影。 |
 
 **`World/Pixel/`：企鵝怎麼畫**
 
@@ -40,7 +43,9 @@ App 分三層，像 Vue 的「props 往下、events 往上」：
 |---|---|
 | [CharacterRig.swift](../ios/PenguinFamily/World/Pixel/CharacterRig.swift) | `rig.json` 的資料格式（調色盤、部件、轉軸、定稿正面圖）。 |
 | [RigCompositor.swift](../ios/PenguinFamily/World/Pixel/RigCompositor.swift) | 部件合成：給一個姿勢（頭、手幾度、身體壓扁多少），拼出原始尺寸的一格小圖。照私有素材 repo 的 Python 規格，逐格相同。 |
+| [Motion.swift](../ios/PenguinFamily/World/Pixel/Motion.swift) | 動作的通用格式：每秒幾格、共幾格、第幾格的姿勢；`Motion.all` 列出 App 會用到的所有動作。 |
 | [HelloMotion.swift](../ios/PenguinFamily/World/Pixel/HelloMotion.swift) | 哈囉的時間軸：第幾格時頭、手各轉幾度。 |
+| [CharacterFrames.swift](../ios/PenguinFamily/World/Pixel/CharacterFrames.swift) | 一隻角色預先算好的圖：站好一張，加上每個動作的每一格。載入角色時全部算好，播放時只取出來貼。 |
 | [PixelGrid.swift](../ios/PenguinFamily/World/Pixel/PixelGrid.swift) | 像素格子：每格放一個調色盤代碼或透明。 |
 | [PixelImage.swift](../ios/PenguinFamily/World/Pixel/PixelImage.swift) | 把像素格子轉成可以顯示的圖（`CGImage`）。 |
 
@@ -78,6 +83,7 @@ App 分三層，像 Vue 的「props 往下、events 往上」：
 | [RigCompositorTests.swift](../ios/PenguinFamilyTests/RigCompositorTests.swift) | 合成規則，用手寫的 10×10 假角色，永遠會跑。 |
 | [CharacterPackParityTests.swift](../ios/PenguinFamilyTests/CharacterPackParityTests.swift) | 和 Python 逐格相同；沒有角色包時自動跳過。 |
 | [PenguinDisplayTests.swift](../ios/PenguinFamilyTests/PenguinDisplayTests.swift) | 哈囉時間軸、顏色轉換、找角色包。 |
+| [CharacterFramesTests.swift](../ios/PenguinFamilyTests/CharacterFramesTests.swift) | 預先算好的每一格和當場合成逐像素相同、超出範圍顯示站好、記憶體估算。 |
 | [PenguinBehaviorTests.swift](../ios/PenguinFamilyTests/PenguinBehaviorTests.swift) | 狀態機的轉換。 |
 | [EventLogTests.swift](../ios/PenguinFamilyTests/EventLogTests.swift) | 事件紀錄，每個測試用自己的記憶體資料庫。 |
 | [RoomTests.swift](../ios/PenguinFamilyTests/RoomTests.swift) | 房間擺放檢查、等角換算、背景與家具的畫法、前後順序。 |
@@ -93,14 +99,17 @@ App 分三層，像 Vue 的「props 往下、events 往上」：
 
 ```mermaid
 flowchart TD
-    App["PenguinFamilyApp"] --> Content["ContentView（接線員）"]
+    App["PenguinFamilyApp"] --> Content["ContentView（載入 → 主遊戲）"]
+    Content --> Loading["LoadingView"]
     Content --> Library["CharacterPackLibrary"]
-    Content --> Room["RoomView"]
-    Content --> Behavior["PenguinBehavior"]
-    Content --> Log["EventLog"]
+    Content --> Game["GameView（接線員）"]
+    Game --> Room["RoomView"]
+    Game --> Behavior["PenguinBehavior"]
+    Game --> Log["EventLog"]
 
     subgraph World["World：畫面"]
         Library --> Compositor["RigCompositor"]
+        Library --> Frames["CharacterFrames"]
         Room --> Penguin["PenguinView"]
         Room --> Renderer["RoomRenderer"]
         Room --> Camera["RoomCamera"]
@@ -109,9 +118,13 @@ flowchart TD
         Room --> Image["PixelImage"]
         Renderer --> Layout
         Renderer --> Grid["PixelGrid"]
-        Penguin --> Compositor
-        Penguin --> Hello["HelloMotion"]
+        Penguin --> Frames
+        Penguin --> Motion["Motion"]
         Penguin --> Image
+        Frames --> Compositor
+        Frames --> Motion
+        Frames --> Image
+        Motion --> Hello["HelloMotion"]
         Compositor --> Rig["CharacterRig"]
         Compositor --> Grid
         Image --> Grid
@@ -136,15 +149,20 @@ sequenceDiagram
     participant App as PenguinFamilyApp
     participant Log as EventLog
     participant CV as ContentView
+    participant LV as LoadingView
     participant Lib as CharacterPackLibrary
+    participant GV as GameView
     participant RV as RoomView
 
     App->>Log: 開資料庫
     Note over App,Log: 打不開就改用暫存，這次的事件不會留下
     App->>CV: 顯示
-    CV->>Lib: 載入第一隻能用的角色
+    CV->>LV: 馬上顯示載入畫面
+    CV->>Lib: 在背景載入第一隻能用的角色
+    Note over Lib: 讀 rig.json，把站好與每個動作的每一格都先算好
     Lib-->>CV: 角色，或沒有（顯示灰色剪影）
-    CV->>RV: 房間、角色、企鵝位置、意圖（待機）
+    CV->>GV: 淡入主遊戲
+    GV->>RV: 房間、角色、企鵝位置、意圖（待機）
     RV->>RV: 鏡頭對準企鵝，每個像素 3pt
 ```
 
@@ -155,24 +173,24 @@ sequenceDiagram
     actor Owner as 主人
     participant PV as PenguinView
     participant RV as RoomView
-    participant CV as ContentView
+    participant GV as GameView
     participant Log as EventLog
     participant B as PenguinBehavior
 
     Owner->>PV: 點企鵝
     PV->>RV: 被點了
     RV->>RV: 重設閒置計時
-    RV->>CV: 被點了
-    CV->>Log: 記下「主人點了這隻」
-    CV->>B: 收到「被點」
-    B-->>CV: 意圖變成「哈囉」
-    Note over CV,PV: SwiftUI 發現意圖變了，往下重畫
-    CV->>RV: 意圖：哈囉
+    RV->>GV: 被點了
+    GV->>Log: 記下「主人點了這隻」
+    GV->>B: 收到「被點」
+    B-->>GV: 意圖變成「哈囉」
+    Note over GV,PV: SwiftUI 發現意圖變了，往下重畫
+    GV->>RV: 意圖：哈囉
     RV->>PV: 意圖：哈囉
-    PV->>PV: 播哈囉（2.8 秒）
-    PV->>CV: 播完了（經過 RoomView）
-    CV->>B: 收到「播完」
-    B-->>CV: 意圖回到「待機」
+    PV->>PV: 播哈囉：每秒 20 次取出預先算好的下一格（共 2.8 秒）
+    PV->>GV: 播完了（經過 RoomView）
+    GV->>B: 收到「播完」
+    B-->>GV: 意圖回到「待機」
 ```
 
 ### 拖曳與捏合
