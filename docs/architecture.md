@@ -1,13 +1,14 @@
 # 架構
 
-目前還沒有程式碼，這裡是規劃中的結構。實作後，以程式碼為準並更新這份文件。
+程式與這份文件不同時，以程式為準並更新這份文件。2026-11-16「App 架構先行」完成時，已實作的是 `World`、`Behavior`、`Memory` 的最小版本，以及 `Resources` 的角色包；其餘模組還是規劃。
 
-專案名稱 `PenguinFamily`，最低支援 iOS 18；App 程式放在根目錄的 `ios/`（作者 2026-11-11 決定）。Xcode 建專案時會建立 `PenguinFamily/` 資料夾，建好後改名為 `ios/`；實際路徑以建好的專案為準。
+專案名稱 `PenguinFamily`，最低支援 iOS 18；App 程式放在根目錄的 `ios/`（作者 2026-11-11 決定）。專案層級的建置設定在 `ios/Config/`，簽署用的 Team ID 不進 git（見[實機測試](research/device-testing.md)）。
 
 ```
 penguin-family/                    公開 repo
 ├─ ios/                           App
 │  ├─ PenguinFamily.xcodeproj
+│  ├─ Config/        Base.xcconfig；Signing.local.xcconfig（不進 git）
 │  ├─ PenguinFamily/
 │  │  ├─ App/        SwiftUI 外殼、抱抱介面、Chat/ 聊天介面
 │  │  ├─ World/      畫面：箱庭、鏡頭、企鵝的呈現
@@ -36,9 +37,9 @@ penguin-family/                    公開 repo
 - **事件紀錄目前只記「主人點了企鵝」**（2026-11-16）：`Memory/EventLog` 用 SwiftData 存在手機上，明確關閉 CloudKit 同步；換機與備份到 B1 再決定。每次點擊都記，包含哈囉中被忽略的點擊；記下是哪一隻（角色包 id）。事件種類存字串，之後新增種類不用遷移資料庫；舊版本讀到不認得的種類會略過。資料庫打不開時改用暫存，企鵝照樣能用。
 - **日誌不寫角色 id 與內容**：錯誤訊息可能含檔案路徑（帶角色 id），用 `privacy: .private` 讓系統日誌預設遮蔽。
 
-## World：目前的像素原型
+## World：像素
 
-[ADR 0001](adr/0001-realitykit-swiftui.md) 的 RealityKit 真 3D 還沒有被推翻；像素或 3D 尚未決定（2026-11-11）。在那之前，`World` 先用像素圖做原型，之後若走 3D 只替換這一層。
+角色與箱庭走像素，畫面用 SwiftUI 與自寫的部件合成，見 [ADR 0005](adr/0005-pixel-art-swiftui.md)（2026-11-16，取代以真 3D 為前提的 ADR 0001；實機確認後定案）。
 
 - **部件合成**：企鵝拆成身體、手、頭與五官等部件。每格先在原始像素尺寸的小畫布上合成，再整數倍放大顯示，所以結果和私有素材 repo 的動作預覽 GIF 一致。
 - **合成規則**：身體、手、頭的底色與輪廓可以旋轉；帽子、嘴巴、眼睛等小部件只跟著移動、不轉，因為像素圖轉小角度會把小形狀弄碎；外框在每格組好後才統一描。

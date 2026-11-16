@@ -1,9 +1,12 @@
 ---
-status: proposed
+status: superseded
 date: 2026-11-04
+superseded_by: 0005
 ---
 
 # 用 RealityKit＋SwiftUI 開發，而不是 Flutter 或 Unity
+
+> 2026-11-16 被 [ADR 0005](0005-pixel-art-swiftui.md) 取代：素材改走像素，真 3D 的前提不成立。以下保留原文作為紀錄。
 
 作者有 Flutter 經驗，但 2.5D 箱庭若走真 3D，Flutter 的選項較弱：查到 Flame 只支援 2D（來源可信度低），flutter_scene 仍在 1.0 前。這款場景小、角色少，又有聊天介面、觸覺回饋和小工具，因此選用原生的 RealityKit＋SwiftUI，好處是不用跨語言橋接。Flutter 也有觸覺套件，小工具則要另寫原生設定，所以差距主要來自真 3D。SceneKit 已棄用，不採用。
 
