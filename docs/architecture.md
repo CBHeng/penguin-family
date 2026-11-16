@@ -54,6 +54,7 @@ penguin-family/                    公開 repo
 - **部件像素寫在 JSON，不用 PNG**：合成與測試只需要純 Swift，不用解碼圖片；顏色也一定精確，不會被色彩管理改掉（後者是推測，未實測）。要看圖時，看私有素材 repo 的預覽 GIF。
 - **為什麼是 `.bundle`**：2026-11-16 用 Xcode 26.6 實測，專案同步的資料夾會把子資料夾的檔案攤平放進 App，兩隻角色的 `rig.json` 會撞名、編譯失敗；資料夾名稱以 `.bundle` 結尾時會整包複製、保留結構。沒有角色包時也能編譯。
 - **合成的對照規格**：私有素材 repo 匯出程式裡的 `compose_from_rig()` 只用 `rig.json` 合成，匯出時會和原本的動作程式逐格比對；Swift 版 `World/Pixel/RigCompositor` 照它實作。
+- **箱庭（等角）**：`World/Room/`。`RoomLayout` 是邏輯：地板格子、家具佔用的格子與高度、牆上的東西、擺放檢查，不管畫面。`IsoProjection` 把格子 (i, j) 與高度換算成像素（每格 32×16，2:1 斜率）。`RoomRenderer` 畫背景（牆、地板、窗戶）與每件家具的色塊盒子，並依「最靠近主人的角」排前後。`RoomView` 把背景、家具與企鵝疊起來，每個像素 3pt。找路與行為只用格子座標，換畫法時不受影響。
 - **顯示**：`World/PenguinView` 每格先合成原始尺寸的圖，再以整數倍放大、關閉平滑處理（`interpolation(.none)`）。哈囉以每秒 20 格播放，時間軸 `HelloMotion` 照私有素材 repo 的 `hello_pose()`，兩隻共用。`PenguinView` 照 `Behavior` 的意圖播放，點擊與播完都交回 `Behavior`。`CharacterPackLibrary` 列出 App 裡的角色包，載入第一隻能用的；沒有或全壞時顯示灰色占位剪影。
 - **取整要和 Python 相同**：Python 3 的 `round()` 遇到 .5 取最近的偶數，Swift 的 `rounded()` 預設遠離 0，所以 Swift 版明確用 `.toNearestOrEven`（2026-11-16 查證：[SE-0113](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0113-rounding-functions-on-floatingpoint.md)、[Apple `rounded(_:)`](https://developer.apple.com/documentation/swift/double/rounded(_:))、[Python 文件討論](https://www.python.org/pipermail/docs/2013-February/012898.html)）。
 

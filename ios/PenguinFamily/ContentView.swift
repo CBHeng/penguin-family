@@ -6,17 +6,29 @@ struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
     @State private var character = CharacterPackLibrary.loadFirst()
     @State private var behavior = PenguinBehavior()
+    /// 企鵝站在地板的哪一點（格）；A1 第 3、4 項加入走動後會變。
+    @State private var penguinPosition = TilePosition(i: 4.5, j: 4.5)
 
     var body: some View {
-        ZStack {
-            // 草地色，和私有素材 repo 的預覽相同
-            Color(red: 196 / 255, green: 224 / 255, blue: 170 / 255)
+        ZStack(alignment: .top) {
+            // 箱庭外面的顏色
+            Color(red: 0.23, green: 0.21, blue: 0.19)
                 .ignoresSafeArea()
-            PenguinView(
+            RoomView(
+                room: .indoor,
                 character: character?.compositor,
+                penguinPosition: penguinPosition,
                 intent: behavior.intent,
                 onTap: ownerTapped,
                 onMotionFinished: { behavior.handle(.motionFinished) })
+            .ignoresSafeArea()
+            if character == nil {
+                Text("沒有角色包")
+                    .font(.caption)
+                    .foregroundStyle(.white)
+                    .padding(6)
+                    .background(.black.opacity(0.4), in: Capsule())
+            }
         }
     }
 
