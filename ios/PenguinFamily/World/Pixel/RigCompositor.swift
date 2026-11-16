@@ -21,6 +21,8 @@ nonisolated struct RigPose: Equatable, Sendable {
 /// - 取整與 Python 的 `round()` 相同，.5 取最近的偶數。
 nonisolated struct RigCompositor: Sendable {
     let rig: CharacterRig
+    /// 調色盤代碼對應的顏色。
+    let colors: [Character: PixelColor]
     private let grids: [String: PixelGrid]
     private let outline: Character
 
@@ -31,6 +33,12 @@ nonisolated struct RigCompositor: Sendable {
         let codes = try Self.singleCharacters(Array(rig.palette.keys) + [rig.outline, rig.empty])
         let empty = Character(rig.empty)
         let palette = Set(codes.dropLast())
+        var colors: [Character: PixelColor] = [:]
+        for (code, hex) in rig.palette {
+            guard let color = PixelColor(hex: hex) else { throw CharacterRigError.invalidColor(hex) }
+            colors[Character(code)] = color
+        }
+        guard colors[Character(rig.outline)] != nil else { throw CharacterRigError.invalidCode(rig.outline) }
 
         for name in ["body", "arm", "armRaised", "head"] {
             guard let part = rig.parts[name] else { throw CharacterRigError.missingPart(name) }
@@ -59,6 +67,7 @@ nonisolated struct RigCompositor: Sendable {
             throw CharacterRigError.missingPart(name)
         }
         self.rig = rig
+        self.colors = colors
         self.grids = grids
         outline = Character(rig.outline)
     }

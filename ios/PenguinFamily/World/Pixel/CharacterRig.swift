@@ -66,9 +66,25 @@ nonisolated struct RigPoint: Decodable, Equatable, Sendable {
     }
 }
 
+/// 不透明的 sRGB 顏色。
+nonisolated struct PixelColor: Equatable, Sendable {
+    let red: UInt8
+    let green: UInt8
+    let blue: UInt8
+
+    /// 解析 `#RRGGBB`。
+    init?(hex: String) {
+        guard hex.count == 7, hex.first == "#", let value = UInt32(hex.dropFirst(), radix: 16) else { return nil }
+        red = UInt8((value >> 16) & 0xFF)
+        green = UInt8((value >> 8) & 0xFF)
+        blue = UInt8(value & 0xFF)
+    }
+}
+
 nonisolated enum CharacterRigError: Error, Equatable {
     case unsupportedFormat(Int)
     case invalidCode(String)
+    case invalidColor(String)
     case missingPart(String)
     case missingPivot(String)
     case missingAnchor(String)

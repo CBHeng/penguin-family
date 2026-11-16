@@ -72,6 +72,24 @@ struct CharacterPackParityTests {
             }
         }
     }
+
+    /// App 播放哈囉用的 Swift 時間軸，每一格的姿勢與畫面都要和 Python 相同。
+    @Test(.enabled(if: !packs.isEmpty, "沒有角色包（乾淨 clone），跳過"), arguments: packs)
+    func helloTimelineMatchesPython(pack: URL) throws {
+        let c = try Self.compositor(pack)
+        let empty = Character(c.rig.empty)
+        let file = pack.appending(path: "hello.golden.json")
+        let golden = try JSONDecoder().decode(Golden.self, from: Data(contentsOf: file))
+        #expect(golden.frames.count == HelloMotion.frameCount)
+        for (i, frame) in golden.frames.enumerated() {
+            let pose = HelloMotion.pose(frame: i)
+            #expect(abs(pose.headDegrees - frame.headDegrees) < 1e-9, "frame \(i) head")
+            #expect(abs(pose.armDegrees - frame.armDegrees) < 1e-9, "frame \(i) arm")
+            #expect(abs(pose.squash - frame.squash) < 1e-12, "frame \(i) squash")
+            let diff = Self.firstDifference(c.compose(pose).rows(empty: empty), frame.rows)
+            #expect(diff == nil, "frame \(i): \(diff ?? "")")
+        }
+    }
 }
 
 private extension Array {
