@@ -29,13 +29,13 @@ nonisolated struct RoomCamera: Equatable, Sendable {
         centerY = Self.clamp(y, canvas: canvasHeight, viewport: viewportHeight)
     }
 
-    /// 往目標靠近一步：每步走剩下距離的 `fraction`，很近時直接到位。回傳是否已經到了。
+    /// 往目標靠近一步：每步走剩下距離的 `fraction`，剩不到 0.1 像素時直接到位。回傳是否已經到了。
     @discardableResult
     mutating func approach(x: Double, y: Double, fraction: Double) -> Bool {
         let target = (Self.clamp(x, canvas: canvasWidth, viewport: viewportWidth),
                       Self.clamp(y, canvas: canvasHeight, viewport: viewportHeight))
         let dx = target.0 - centerX, dy = target.1 - centerY
-        if abs(dx) < 0.5 && abs(dy) < 0.5 {
+        if abs(dx) < 0.1 && abs(dy) < 0.1 {
             moveTo(x: target.0, y: target.1)
             return true
         }
@@ -43,9 +43,13 @@ nonisolated struct RoomCamera: Equatable, Sendable {
         return false
     }
 
-    /// 畫面左上角對著箱庭圖的哪個像素，取整數，讓所有像素對齊、移動時不閃。
-    var topLeft: PixelPoint {
-        PixelPoint(x: Int((centerX - viewportWidth / 2).rounded()), y: Int((centerY - viewportHeight / 2).rounded()))
+    /// 畫面左上角對著箱庭圖的哪一點（箱庭像素，可以有小數），對齊到 `step` 的整數倍。
+    ///
+    /// `step` 傳「一個螢幕實體像素等於幾個箱庭像素」：畫面跟著手指走，又不會停在實體像素中間而糊掉。
+    /// 整張箱庭一起移動，角色、家具與地板彼此的像素格子仍然對齊（作者 2026-11-16 決定不再一次跳一整個箱庭像素）。
+    func topLeft(step: Double) -> (x: Double, y: Double) {
+        func snap(_ value: Double) -> Double { (value / step).rounded() * step }
+        return (snap(centerX - viewportWidth / 2), snap(centerY - viewportHeight / 2))
     }
 
     private static func clamp(_ value: Double, canvas: Double, viewport: Double) -> Double {

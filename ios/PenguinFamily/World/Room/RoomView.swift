@@ -26,6 +26,8 @@ struct RoomView: View {
     @State private var dragStart: (x: Double, y: Double)?
     /// 主人最後一次碰箱庭的時間；改變時重新計算閒置。
     @State private var lastTouch = Date.now
+    /// 1pt 等於幾個螢幕實體像素（iPhone 17 是 3，iPhone 11 是 2）。
+    @Environment(\.displayScale) private var displayScale
 
     init(room: RoomLayout, character: RigCompositor?, penguinPosition: TilePosition, intent: PenguinBehavior.Intent,
          onTap: @escaping () -> Void = {}, onMotionFinished: @escaping () -> Void = {}) {
@@ -49,6 +51,7 @@ struct RoomView: View {
         let feet = iso.feet(at: penguinPosition)
         GeometryReader { proxy in
             let cam = camera ?? makeCamera(viewport: proxy.size, focus: feet)
+            let topLeft = cam.topLeft(step: 1 / (ppp * displayScale))
             ZStack(alignment: .topLeading) {
                 PixelImageView(image: art.background, pixelWidth: iso.canvasWidth, pixelHeight: iso.canvasHeight,
                                pointsPerPixel: ppp)
@@ -70,9 +73,10 @@ struct RoomView: View {
                 }
             }
             .frame(width: CGFloat(iso.canvasWidth) * ppp, height: CGFloat(iso.canvasHeight) * ppp, alignment: .topLeading)
-            .offset(x: -CGFloat(cam.topLeft.x) * ppp, y: -CGFloat(cam.topLeft.y) * ppp)
+            .offset(x: -topLeft.x * ppp, y: -topLeft.y * ppp)
             .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
             .clipped()
+            .coordinateSpace(.named(Self.viewportSpace))
             .onAppear { camera = makeCamera(viewport: proxy.size, focus: feet) }
             .onChange(of: proxy.size) { _, size in
                 // 畫面大小改變（例如旋轉）時保留原本對著的點
@@ -97,9 +101,13 @@ struct RoomView: View {
                           centerX: target.0, centerY: target.1)
     }
 
+    /// 拖曳量要以不會動的外框為基準。手勢掛在會跟著鏡頭移動的背景圖上，若用預設的 `.local`，
+    /// 背景一移動，量到的拖曳量就跟著變，鏡頭在兩個位置間來回跳（2026-11-16 模擬器上看到閃爍）。
+    private static let viewportSpace = "RoomViewport"
+
     /// 拖曳空地捲動：手指往右拖，畫面往右移，也就是鏡頭往左。
     private func panGesture(from cam: RoomCamera) -> some Gesture {
-        DragGesture()
+        DragGesture(coordinateSpace: .named(Self.viewportSpace))
             .onChanged { value in
                 let start = dragStart ?? (cam.centerX, cam.centerY)
                 dragStart = start

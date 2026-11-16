@@ -20,12 +20,18 @@ struct RoomCameraTests {
         #expect(Self.camera(x: 200, y: 999).centerY == 128)
     }
 
-    @Test func topLeftSnapsToWholePixels() {
+    @Test func topLeftSnapsToScreenPixels() {
+        // 每個箱庭像素 3pt、iPhone 17 是 @3x：一個實體像素是 1/9 箱庭像素
+        let step = 1.0 / 9
         var cam = Self.camera(x: 200, y: 0)
         cam.moveTo(x: 200.4, y: 0)
-        #expect(cam.topLeft == PixelPoint(x: 133, y: -18))
+        // 左上角 x = 200.4 - 67 = 133.4，最近的 1/9 是 133 + 4/9
+        #expect(abs(cam.topLeft(step: step).x - (133 + 4 * step)) < 1e-9)
+        // 移動不到一個箱庭像素，畫面也跟著動：133.6 → 133 + 5/9
         cam.moveTo(x: 200.6, y: 0)
-        #expect(cam.topLeft == PixelPoint(x: 134, y: -18))
+        #expect(abs(cam.topLeft(step: step).x - (133 + 5 * step)) < 1e-9)
+        // step 為 1 時就是整個箱庭像素
+        #expect(cam.topLeft(step: 1).x == 134)
     }
 
     @Test func approachGetsCloserThenArrives() {
