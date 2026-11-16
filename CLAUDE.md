@@ -11,6 +11,7 @@
 - 作者是資深 Java／Vue 開發者，做過 Flutter，不熟 iOS 與遊戲開發；不熟的地方作者會再追問。
 - 優先驗證「靈魂」：判斷取捨時，先問這會不會讓企鵝更像作者家的那兩隻。
 - 外部工具、法規、價格會變動：引用前先查證，並把來源與查證日期記進 `docs/research/`。
+- **現行文件只寫現況**：「原本是…後來改成…」、舊的粗估、已不採用的做法，寫進 [docs/history/timeline.md](docs/history/timeline.md)；不再適用的調查搬到 `docs/history/research/`。決定的理由留在 ADR。
 - 手感、效能、觸覺回饋以 iPhone 實機為準。
 
 ## 機密資訊
@@ -46,7 +47,8 @@ API 金鑰、權杖、密碼、憑證與私鑰只留在本機被 `.gitignore` �
 | 找某件事在哪個檔案；新增、刪除、改名程式檔後更新 | [docs/code-map.md](docs/code-map.md) |
 | 寫台詞、行為、人設提示 | [docs/characters/bible.md](docs/characters/bible.md)、[語氣底線](.claude/rules/character-voice.md) |
 | 碰聊天、AI、記憶、後端、權限 | [安全與隱私底線](.claude/rules/safety-privacy.md) |
-| 想質疑或推翻技術、資料、造型的決定 | [docs/adr/](docs/adr/) |
+| 想質疑或推翻技術、資料、造型的決定 | [docs/adr/README.md](docs/adr/README.md)（索引，只看「現行」） |
+| 想知道某個做法是怎麼演變來的、為什麼放棄舊做法 | [docs/history/timeline.md](docs/history/timeline.md) |
 | 重新評估素材工具、引擎或繪圖方式 | [docs/research/asset-and-engine.md](docs/research/asset-and-engine.md)、[docs/research/rendering-performance.md](docs/research/rendering-performance.md) |
 | 碰 AI 費用、法規、上架議題 | [docs/research/compliance-and-ai.md](docs/research/compliance-and-ai.md) |
 | commit 前、碰簽署或金鑰 | [docs/research/public-repo-security.md](docs/research/public-repo-security.md) |

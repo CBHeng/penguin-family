@@ -2,7 +2,7 @@
 
 程式與這份文件不同時，以程式為準並更新這份文件。這份寫「為什麼這樣切」；目前有哪些檔案、各自負責什麼、怎麼串起來，見[程式地圖](code-map.md)。
 
-2026-11-16 已實作的是 `World`、`Behavior`、`Memory` 的最小版本，以及 `Resources` 的角色包；下面目錄圖標「未建立」的還是規劃。
+已實作的是 `World`、`Behavior`、`Memory` 的最小版本，以及 `Resources` 的角色包；下面目錄圖標「未建立」的還是規劃。過去的變化見[時間線](history/timeline.md)。
 
 專案名稱 `PenguinFamily`，最低支援 iOS 18；App 程式放在根目錄的 `ios/`（作者 2026-11-11 決定）。專案層級的建置設定在 `ios/Config/`，簽署用的 Team ID 不進 git（見[實機測試](research/device-testing.md)）。
 
@@ -67,7 +67,7 @@ penguin-family/                    公開 repo
 - **部件合成**：企鵝拆成身體、手、頭與五官等部件。每格先在原始像素尺寸的小畫布上合成，再整數倍放大顯示，所以結果和私有素材 repo 的動作預覽 GIF 一致。
 - **合成規則**：身體、手、頭的底色與輪廓可以旋轉；帽子、嘴巴、眼睛等小部件只跟著移動、不轉，因為像素圖轉小角度會把小形狀弄碎；外框在每格組好後才統一描。
 - **合成是純 Swift**：不依賴繪圖框架，可以寫單元測試；顯示層只負責把合成好的圖放大貼上，放大時不能做平滑處理。
-- **為什麼不讓繪圖引擎旋轉部件**：引擎是在螢幕解析度旋轉放大後的貼圖，像素不會重新對齊格子，和調好的預覽不同，帽子與五官錯位的問題可能再出現（推測，未實測）。所以部件在原始像素尺寸合成好，繪圖層只貼圖、不旋轉。查證紀錄見[素材調查](research/asset-and-engine.md)。
+- **為什麼不讓繪圖引擎旋轉部件**：引擎是在螢幕解析度旋轉放大後的貼圖，像素不會重新對齊格子，和調好的預覽不同，帽子與五官錯位的問題可能再出現（推測，未實測）。所以部件在原始像素尺寸合成好，繪圖層只貼圖、不旋轉。當時的查證紀錄已封存（[舊調查](history/research/3d-route.md#像素原型的畫面層查證日期2026-11-11)）。
 - **角色包內容**：每隻角色一個 `rig.json`，由私有素材 repo 的 `export_pack.py` 匯出到 `Resources/CharacterPacks.bundle/<角色>/`（作者 2026-11-16 決定）。內容：
   - `canvas`：部件畫布的寬高；以下座標都是這個畫布上的格子座標。
   - `palette`、`outline`、`empty`：調色盤代碼對應的顏色、外框用哪個代碼、哪個字元代表透明。
@@ -77,7 +77,7 @@ penguin-family/                    公開 repo
 - **部件像素寫在 JSON，不用 PNG**：合成與測試只需要純 Swift，不用解碼圖片；顏色也一定精確，不會被色彩管理改掉（後者是推測，未實測）。要看圖時，看私有素材 repo 的預覽 GIF。
 - **為什麼是 `.bundle`**：2026-11-16 用 Xcode 26.6 實測，專案同步的資料夾會把子資料夾的檔案攤平放進 App，兩隻角色的 `rig.json` 會撞名、編譯失敗；資料夾名稱以 `.bundle` 結尾時會整包複製、保留結構。沒有角色包時也能編譯。
 - **合成的對照規格**：私有素材 repo 匯出程式裡的 `compose_from_rig()` 只用 `rig.json` 合成，匯出時會和原本的動作程式逐格比對；Swift 版 `World/Pixel/RigCompositor` 照它實作。
-- **箱庭（等角）**：`World/Room/`。`RoomLayout` 是邏輯：地板格子、家具佔用的格子與高度、牆上的東西、擺放檢查，不管畫面。`IsoProjection` 把格子 (i, j) 與高度換算成像素（每格 32×16，2:1 斜率）。`RoomRenderer` 畫背景（牆、地板、窗戶）與每件家具的色塊盒子，並依「最靠近主人的角」排前後。找路與行為只用格子座標，換畫法時不受影響（2026-11-16 從 SwiftUI 換成 Metal 時，這些都沒改）。
+- **箱庭（等角）**：`World/Room/`。`RoomLayout` 是邏輯：地板格子、家具佔用的格子與高度、牆上的東西、擺放檢查，不管畫面。`IsoProjection` 把格子 (i, j) 與高度換算成像素（每格 32×16，2:1 斜率）。`RoomRenderer` 畫背景（牆、地板、窗戶）與每件家具的色塊盒子，並依「最靠近主人的角」排前後。找路與行為只用格子座標，換畫法時不受影響。
 - **鏡頭與縮放**：`RoomCamera` 記畫面中央對著箱庭的哪一點（箱庭像素），限制在範圍內；`RoomZoom` 決定每個像素幾 pt（最大 3pt，最小房間左右塞滿畫面），兩者都是純數學、有單元測試。畫面左上角對齊螢幕實體像素（依 `displayScale`），畫面跟著手指走又不糊；所有東西放在同一個像素格子上，彼此仍對齊。捏合時連續縮放，放開後吸附到整數個實體像素，讓每個像素一樣大。
 - **箱庭的即時狀態**：`RoomStage` 持有鏡頭、縮放、企鵝位置與正在播的動作；決定每一格要畫哪些圖（依「最靠近主人」排前後）、點擊打中了誰（觸控範圍是整張企鵝圖）、要不要重畫。純邏輯，時間由外面傳入，所以「閒置 5 秒後鏡頭回去」「哈囉播到第幾格」都能在測試裡用假時間驗證。手勢與意圖由 `RoomView`（SwiftUI）交給它。
 - **Metal 繪圖**（`World/Render/`，[ADR 0006](adr/0006-metal-rendering.md)）：
@@ -85,14 +85,13 @@ penguin-family/                    公開 repo
   - `GameLoop`（在 `MetalRoomView`）：用 `CADisplayLink` 跟著螢幕更新，最高到手機支援的更新率（120Hz 要 Info.plist 的 `CADisableMinimumFrameDurationOnPhone`，放在 `ios/Config/PenguinFamily-Info.plist`）。每一格問 `RoomStage` 有沒有變化，有才畫；沒東西在動時暫停省電，需要時（例如 5 秒後鏡頭回去）再醒來。
   - 畫面本身不會移動，鏡頭與縮放都在繪圖時處理，所以手勢座標就是畫面上的位置。
   - 建置需要 Metal Toolchain（Xcode 26 起另外下載，見 ADR 0006）。
-  - 2026-11-16 模擬器截圖：Metal 版和原本的 SwiftUI 版逐像素相同。
 - **播放**：哈囉以每秒 20 格播放，時間軸 `HelloMotion` 照私有素材 repo 的 `hello_pose()`，兩隻共用。`RoomStage` 照 `Behavior` 的意圖選動作，播完經 `GameLoop` 回報給 `Behavior`。
 - **動作與預先算好的格子**（作者 2026-11-16 決定）：動作是資料（`Motion`：每秒幾格、共幾格、第幾格的姿勢），`Motion.all` 列出所有動作。載入角色時，`CharacterFrames` 把站好與每個動作的每一格都先合成好；播放時只取出來貼，拖曳重畫時也不重新合成。2026-11-16 在 Mac（M4 Pro）上量，一格合成約 0.09 毫秒、44×45 像素約 7.9KB；哈囉 56 格約 0.44MB。A1 全部動作都存起來的推估約 10MB 以內（假設兩隻、各約 10 個動作、每個約 60 格）。動作多到打開 App 明顯變慢時，再改成背景算或第一次播才算。跟著互動即時變化的姿勢（例如抱抱時壓扁）不預先算，直接用 `RigCompositor` 合成。`CharacterPackLibrary` 列出 App 裡的角色包，載入第一隻能用的；沒有或全壞時顯示灰色占位剪影。
 - **取整要和 Python 相同**：Python 3 的 `round()` 遇到 .5 取最近的偶數，Swift 的 `rounded()` 預設遠離 0，所以 Swift 版明確用 `.toNearestOrEven`（2026-11-16 查證：[SE-0113](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0113-rounding-functions-on-floatingpoint.md)、[Apple `rounded(_:)`](https://developer.apple.com/documentation/swift/double/rounded(_:))、[Python 文件討論](https://www.python.org/pipermail/docs/2013-February/012898.html)）。
 
 ## 測試
 
-單元測試涵蓋行為狀態轉換、部件合成規則、台詞選擇規則和 AI 失敗回退。
+單元測試涵蓋行為狀態轉換、部件合成規則、事件紀錄、箱庭的邏輯與即時狀態；之後加入台詞選擇規則和 AI 失敗回退。
 
 部件合成分兩層測（作者 2026-11-16 決定）：
 

@@ -5,7 +5,7 @@ paths:
   - 'ios/PenguinFamily/App/**'
   - 'ios/PenguinFamily/Soul/**'
   - 'ios/PenguinFamily/Behavior/**'
-  - 'ios/PenguinFamily/Resources/CharacterPacks/**'
+  - 'ios/PenguinFamily/Resources/CharacterPacks.bundle/**'
 ---
 
 # 語氣底線
