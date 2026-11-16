@@ -53,6 +53,17 @@
 
 本 repo 的 `.gitignore` 已經排除 `xcuserdata/`、`.DS_Store`、`.env`、`Secrets.xcconfig`、`*.p8`、`*.p12`、`*.pem`、`*.key`、`*.mobileprovision`。
 
+## main 的分支保護（查證日期：2026-11-16）
+
+| 發現 | 來源 | 可信度 |
+|---|---|---|
+| 公開 repo 用免費方案也能設規則集（ruleset） | [GitHub Docs：Available rules for rulesets](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/available-rules-for-rulesets) | 高 |
+| 「必須經過 PR」可以不需要審核，只要開了 PR 就能合併；也能限定合併方式（例如只允許 squash） | 同上 | 高 |
+| 「擋掉 push」這種規則只適用私有或內部 repo，公開 repo 要靠「必須經過 PR」來達到不能直推 | 同上 | 高 |
+| 只在規則集限定 squash 可能不生效，要連 repo 的合併選項一起關掉其他方式 | [GitHub 社群討論 #184410](https://github.com/orgs/community/discussions/184410) | 中，使用者回報 |
+
+本 repo 的設定（2026-11-16）：repo 只允許 squash 合併、合併後自動刪分支、squash 訊息用 PR 標題與內文；規則集「main: squash PR only」要求 main 必須經過 PR（不需審核、只允許 squash）、禁止強制推送與刪除 main，沒有例外名單。流程見 [CLAUDE.md](../../CLAUDE.md) 的「分支、合併與版本」。
+
 ## commit 前的檢查
 
 ```sh

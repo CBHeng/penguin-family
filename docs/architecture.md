@@ -10,7 +10,7 @@
 penguin-family/                    公開 repo
 ├─ ios/                           App
 │  ├─ PenguinFamily.xcodeproj
-│  ├─ Config/        Base.xcconfig；Signing.local.xcconfig（不進 git）
+│  ├─ Config/        Base.xcconfig（含版本號）；PenguinFamily-Info.plist；Signing.local.xcconfig（不進 git）
 │  ├─ PenguinFamily/
 │  │  ├─ PenguinFamilyApp、ContentView、LoadingView、GameView   App 外殼（載入畫面 → 主遊戲）
 │  │  ├─ App/        抱抱介面、Chat/ 聊天介面（未建立；外殼目前在根目錄）

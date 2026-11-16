@@ -5,3 +5,9 @@
 // 沒有這個檔案時照樣能在模擬器編譯，只是不能裝到實機。
 
 #include? "Signing.local.xcconfig"
+
+// 版本（作者 2026-11-16 決定）：和 git tag 同步，每次 squash 合併到 main 升一版（見 CLAUDE.md 的「分支與版本」）。
+// 只在這裡改；三個 target 都繼承這兩個值，不在 Xcode 的 target 設定裡另外填。
+MARKETING_VERSION = 0.0.1
+// 建置號：之後上傳 TestFlight 時每次要遞增；目前固定 1。
+CURRENT_PROJECT_VERSION = 1
