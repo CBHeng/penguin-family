@@ -26,11 +26,20 @@ API 金鑰、權杖、密碼、憑證與私鑰只留在本機被 `.gitignore` �
 
 作者 2026-11-16 決定。GitHub 的規則集「main: squash PR only」強制執行，沒有例外，作者與 Claude 都不能直推 main。
 
+- **分工**（作者 2026-11-16 決定）：commit、push、開 PR 由 Claude 照 [ship skill](.claude/skills/ship/SKILL.md) 做；**合併由作者在 GitHub 按 Squash and merge**；作者說「合併了」後，Claude 照同一個 skill 收尾（同步 main、清分支、版本分支打 tag）。
 - **main 不直接 push**：一律從最新的 main 開分支，經由 PR **squash 合併**（repo 只允許 squash，合併後自動刪分支）。分支上可以放心多次 commit，合併後在 main 只留一個 commit。
-- **分支名稱**：`<類型>/<英文短名>`，類型用 `feat`、`fix`、`perf`、`docs`、`chore`，例如 `feat/second-penguin`。分支名會公開，不放角色名稱或其他私人字詞。
-- **合併前在分支上做完**：測試通過、[TASKS.md](TASKS.md) 與文件更新、**升版**（`ios/Config/Base.xcconfig` 的 `MARKETING_VERSION`，每次合併升最後一碼：0.0.1 → 0.0.2）。
-- **PR 標題就是 main 上的 commit 訊息**：沿用 `類型: 中文摘要`。內文寫做了什麼、怎麼驗證（測試數、模擬器或實機），結尾附 attribution。開 PR 前一樣掃描私人字詞。
-- **合併後打 tag**：在 main 的那個 commit 打 `v<版本>`（例如 `v0.0.2`）並推上去，和 App 裡的版本號一致。升 0.x.0 或 1.0.0 由作者決定。
+- **兩種分支**（作者 2026-11-16 決定）：
+
+  | | 快速分支 | 版本分支 |
+  |---|---|---|
+  | 名稱 | `<類型>/<英文短名>`，類型用 `feat`、`fix`、`perf`、`docs`、`chore`，例如 `feat/second-penguin` | `release/vX.Y.Z`，例如 `release/v0.0.3`（不直接叫 `vX.Y.Z`，免得和 tag 同名） |
+  | 內容 | 一件事，做完就進 | 一批事，整理完才進 |
+  | 版本號 | 不動 | 升到 X.Y.Z（`ios/Config/Base.xcconfig` 的 `MARKETING_VERSION`） |
+  | 合併後 | 不打 tag | 在 main 的那個 commit 打 `vX.Y.Z` 並推上去 |
+
+- **分支名會公開**，不放角色名稱或其他私人字詞。
+- **合併前在分支上做完**：測試通過、[TASKS.md](TASKS.md) 與文件更新；版本分支另外要升版。
+- **PR 標題就是 main 上的 commit 訊息**：沿用 `類型: 中文摘要`。內文寫做了什麼、怎麼驗證（測試數、模擬器或實機），結尾附 attribution。開 PR 前一樣掃描私人字詞。升 0.x.0 或 1.0.0 由作者決定。
 
 ## 公開 repo
 
@@ -44,7 +53,8 @@ API 金鑰、權杖、密碼、憑證與私鑰只留在本機被 `.gitignore` �
 - 選定或更換 AI 供應商與模型，以及任何會產生費用的操作
 - 新增第三方套件，或新增系統權限（健康、定位、通知等）
 - 更動 [docs/adr/](docs/adr/) 已定案的決定
-- 刪除檔案、`git commit`、`git push`、開 PR、合併 PR、打 tag
+- 刪除檔案、`git commit`、`git push`、開 PR、打 tag（作者說 commit、push、開 PR 或「合併了」，就是同意 ship skill 裡對應的步驟）
+- 合併 PR：由作者自己在 GitHub 操作
 - 用記憶體換時間的設計：合計可能超過 50MB，或用量會隨內容持續成長（見[架構的技術取捨](docs/architecture.md#技術取捨)）
 
 ## 文件地圖
