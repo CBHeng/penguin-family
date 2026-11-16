@@ -40,7 +40,7 @@ API 金鑰、權杖、密碼、憑證與私鑰只留在本機被 `.gitignore` �
 |---|---|
 | 回答下一步、回報進度、完成任務後更新 | [TASKS.md](TASKS.md) |
 | 開工、確認階段內容與驗收標準 | [docs/product/roadmap.md](docs/product/roadmap.md) |
-| 設計玩法、判斷某功能是否在範圍內 | [docs/product/vision.md](docs/product/vision.md) |
+| 設計玩法、判斷某功能是否在範圍內 | [docs/product/vision.md](docs/product/vision.md)、[docs/product/game-design.md](docs/product/game-design.md) |
 | 新增模組、調整程式結構 | [docs/architecture.md](docs/architecture.md) |
 | 寫台詞、行為、人設提示 | [docs/characters/bible.md](docs/characters/bible.md)、[語氣底線](.claude/rules/character-voice.md) |
 | 碰聊天、AI、記憶、後端、權限 | [安全與隱私底線](.claude/rules/safety-privacy.md) |
