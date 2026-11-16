@@ -26,7 +26,7 @@ API 金鑰、權杖、密碼、憑證與私鑰只留在本機被 `.gitignore` �
 
 作者 2026-11-16 決定。GitHub 的規則集「main: squash PR only」強制執行，沒有例外，作者與 Claude 都不能直推 main。
 
-- **commit、push、開 PR 一律照 [ship skill](.claude/skills/ship/SKILL.md) 的步驟**：逐檔加入、掃描、測試與文件檢查都在裡面。
+- **分工**（作者 2026-11-16 決定）：commit、push、開 PR 由 Claude 照 [ship skill](.claude/skills/ship/SKILL.md) 做；**合併由作者在 GitHub 按 Squash and merge**；作者說「合併了」後，Claude 照同一個 skill 收尾（同步 main、清分支、版本分支打 tag）。
 - **main 不直接 push**：一律從最新的 main 開分支，經由 PR **squash 合併**（repo 只允許 squash，合併後自動刪分支）。分支上可以放心多次 commit，合併後在 main 只留一個 commit。
 - **兩種分支**（作者 2026-11-16 決定）：
 
@@ -53,7 +53,8 @@ API 金鑰、權杖、密碼、憑證與私鑰只留在本機被 `.gitignore` �
 - 選定或更換 AI 供應商與模型，以及任何會產生費用的操作
 - 新增第三方套件，或新增系統權限（健康、定位、通知等）
 - 更動 [docs/adr/](docs/adr/) 已定案的決定
-- 刪除檔案、`git commit`、`git push`、開 PR、合併 PR、打 tag
+- 刪除檔案、`git commit`、`git push`、開 PR、打 tag（作者說 commit、push、開 PR 或「合併了」，就是同意 ship skill 裡對應的步驟）
+- 合併 PR：由作者自己在 GitHub 操作
 - 用記憶體換時間的設計：合計可能超過 50MB，或用量會隨內容持續成長（見[架構的技術取捨](docs/architecture.md#技術取捨)）
 
 ## 文件地圖

@@ -1,6 +1,6 @@
 ---
 name: ship
-description: 作者同意 commit、push 或開 PR 時（「commit」「push」「開 PR」「送出」「commit push」等），照這裡的步驟把目前分支的改動送進 GitHub。作者沒同意時不使用。
+description: 作者同意 commit、push 或開 PR 時（「commit」「push」「開 PR」「送出」等），照這裡的步驟把分支送進 GitHub；作者說 PR「合併了」時做收尾（同步 main、清分支、版本分支打 tag）。作者沒同意時不使用。
 ---
 
 # ship：commit、push、開 PR
@@ -12,8 +12,9 @@ description: 作者同意 commit、push 或開 PR 時（「commit」「push」�
 | commit | 第 1～3 步 |
 | push、commit push | 第 1～4 步 |
 | 開 PR、送出、commit push 開 PR | 第 1～5 步 |
+| 合併了（作者已在 GitHub 按 Squash and merge） | 第 7 步 |
 
-每一輪都以第 6 步回報結束。**合併 PR 與打 tag 不在這裡**，那兩步每次另外問作者。分支規則見 [CLAUDE.md](../../../CLAUDE.md) 的「分支、合併與版本」。
+每一輪都以第 6 步回報結束。**合併由作者在 GitHub 按**，這裡不合併 PR；作者說「合併了」之後，第 7 步收尾（版本分支在這時打 tag）。分支規則見 [CLAUDE.md](../../../CLAUDE.md) 的「分支、合併與版本」。
 
 作者有給 PR 標題或摘要時，照著用。
 
@@ -103,4 +104,24 @@ gh pr create --base main --head <分支> --title "<標題>" --body-file <內文�
 用繁體中文告訴作者：
 - 做到第幾步；有開 PR 時給網址與標題、分支種類。
 - commit 了哪些檔案、測試數、掃描結果。
-- 下一步要作者決定的：合併（squash）；版本分支合併後要在 main 打 `vX.Y.Z`。
+- 開了 PR 時：請作者在 GitHub 看過後按 Squash and merge，合併後說「合併了」。
+
+## 7. 合併後收尾
+
+作者說「合併了」時：
+
+```sh
+gh pr view <分支> --json state,mergeCommit,headRefOid   # state 要是 MERGED
+git switch main && git pull --ff-only origin main && git fetch --prune
+```
+
+- PR 還沒合併（state 不是 MERGED）：停下，告訴作者。
+- **清本機分支**：本機分支的最後一個 commit 等於 PR 的 `headRefOid`（沒有沒推上去的東西）才用 `git branch -D <分支>` 刪掉；不相等就留著並告訴作者。squash 合併後 git 認不出分支已合併，所以要用 `-D`。
+- **版本分支**：確認 main 的 `HEAD` 就是 PR 的 merge commit、`MARKETING_VERSION` 等於 X.Y.Z，再打 tag 並推上去：
+  ```sh
+  git tag -a vX.Y.Z -m "vX.Y.Z：<這一批的摘要>"
+  git push origin vX.Y.Z
+  ```
+- **快速分支**：不打 tag。
+
+完成：本機在最新的 main、已合併的分支清掉；版本分支的 tag 推上去了。回報時說明 main 的最新 commit、tag（有的話），以及下一步要開什麼分支由作者決定。
