@@ -41,7 +41,7 @@ Apple 把卡頓（hitch）分成兩種：App 自己來不及在期限內把畫�
 - **效能本身分不出高下（推論）。** 幾十張小圖，兩者的 GPU 工作都很少；真正的風險是 SwiftUI 每格比對，兩者都消掉了。比的是風險與適配度。
 - **SpriteKit 的掉幀正好落在我們的核心互動。** iOS 26.0 的掉幀，Apple 說 26.2 修好了，但開發者回報 26.3 又出現、26.4 beta 還在；另有回報「最簡單的場景，摸著螢幕時 FPS 明顯下降」。拖曳、捏合、點企鵝都是摸著螢幕。
 - **SpriteKit 內建的東西我們大多已自己做好，也寫了測試**：鏡頭、縮放、點擊判斷、前後排序、逐格動作、有變化才畫的遊戲迴圈，全在純 Swift 的 `RoomStage`。改用 SpriteKit 的話，這些不是重複，就是改用 `SKCameraNode`、`SKAction`，變得不好單獨測試。
-- **Metal 的缺口是文字。** 對話泡泡（A1 第 13 項）要自己處理：用像素字型點陣圖，或把泡泡用 SwiftUI 疊在 Metal 上。SpriteKit 的 `SKLabelNode` 畫的是平滑的系統字型，也不像像素，所以兩邊都要另外決定。
+- **Metal 的缺口是文字。** 對話泡泡（A1 第 16 項）要自己處理：用像素字型點陣圖，或把泡泡用 SwiftUI 疊在 Metal 上。SpriteKit 的 `SKLabelNode` 畫的是平滑的系統字型，也不像像素，所以兩邊都要另外決定。
 - **iPhone 11 能不能升 iOS 27，二手來源互相矛盾**：2026 年 4～6 月的傳聞說會停止支援，之後又有報導說 iOS 26 能用的 iPhone 都能升。我沒有找到 Apple 的官方清單，要以作者手機上看到的版本為準。
 
 來源：[Apple 論壇 800952](https://developer.apple.com/forums/thread/800952)（26.2 修正）、[815783](https://developer.apple.com/forums/thread/815783)（26.3 又出現）、[816719](https://developer.apple.com/forums/thread/816719)（26.4）、[821590](https://developer.apple.com/forums/thread/821590)（摸著螢幕時掉幀）；iPhone 11 與 iOS 27：[MacRumors 2026-06-04](https://macrumors.com/2026/06/04/ios-27-compatible-iphones-rumor/)（傳聞會停止支援）、[iGeeksBlog](https://www.igeeksblog.com/ios-27-supported-devices/)（說沒有停止支援）。

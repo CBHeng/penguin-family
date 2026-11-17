@@ -255,7 +255,7 @@ sequenceDiagram
 
 位置與分工見[架構](architecture.md)的目錄圖。
 
-- `Soul/`：角色聖經、台詞選擇、`DialogueEngine`（A1 第 13 項）。
-- `Feel/`：觸覺與音效（A1 第 10 項）。
+- `Soul/`：角色聖經、台詞選擇、`DialogueEngine`（A1 第 16 項）。
+- `Feel/`：觸覺與音效（A1 第 13 項）。
 - `Activity/`、`PenguinFamilyWidget/`：步數與小工具（A3）。
 - `backend/`：聊天的薄後端（B1）。
