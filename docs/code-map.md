@@ -7,7 +7,7 @@
 - **保持同步**：`CodeMapTests` 會檢查每個 `.swift` 檔都列在這份文件裡、這裡列的檔案都存在；新增、刪除或改名檔案時，測試失敗就是提醒你回來更新。內容寫得對不對，還是靠人（作者 2026-11-16 決定）。
 - 圖用 [Mermaid](https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/creating-diagrams)：在 GitHub 上會畫成圖；在終端機裡看到的是原始文字。
 
-最後更新：2026-11-16（繪圖改用 Metal，見 [ADR 0006](adr/0006-metal-rendering.md)）。
+最後更新：2026-11-17（舞台改成用身分加入、移除企鵝，第二隻先留在後台）。
 
 ## 一句話看懂
 
@@ -29,13 +29,14 @@ App 分三層，像 Vue 的「props 往下、events 往上」：
 | [PenguinFamilyApp.swift](../ios/PenguinFamily/PenguinFamilyApp.swift) | App 進入點：開事件紀錄的資料庫（打不開就改用暫存，企鵝照樣能用），放上 `ContentView`。 |
 | [ContentView.swift](../ios/PenguinFamily/ContentView.swift) | 先顯示載入畫面，在背景做初始化（載入角色、預先算好每一格、打開事件紀錄），完成後淡入主遊戲。新增的初始化放在這裡的 `load()`。 |
 | [LoadingView.swift](../ios/PenguinFamily/LoadingView.swift) | 載入畫面：和箱庭外面同一個底色，三個像素方塊輪流亮。暫時的樣子。 |
-| [GameView.swift](../ios/PenguinFamily/GameView.swift) | 主遊戲的接線員：每隻企鵝各有狀態機與位置；主人點了哪一隻就交給那一隻，再把事件丟給事件紀錄在背景寫入。 |
+| [GameView.swift](../ios/PenguinFamily/GameView.swift) | 主遊戲的接線員：一家每一隻各有身分、狀態機與位置，決定誰在台上（目前只有第一隻）；主人點了哪一隻就交給那一隻，再把事件丟給事件紀錄在背景寫入。 |
 
 ### World：畫面
 
 | 檔案 | 職責 |
 |---|---|
 | [CharacterPackLibrary.swift](../ios/PenguinFamily/World/CharacterPackLibrary.swift) | 列出 App 裡的角色包，依名稱載入一家兩隻（同時預先算好每一格）；壞掉的跳過，不夠的位置留給灰色剪影。不寫死角色 id。 |
+| [PenguinID.swift](../ios/PenguinFamily/World/PenguinID.swift) | 一隻企鵝的身分：角色包 id，灰色剪影是 `placeholder-<第幾隻>`。舞台、點擊、動作播完、事件紀錄都用它認是哪一隻。 |
 
 **`World/Pixel/`：企鵝怎麼畫**
 
@@ -58,8 +59,8 @@ App 分三層，像 Vue 的「props 往下、events 往上」：
 | [RoomRenderer.swift](../ios/PenguinFamily/World/Room/RoomRenderer.swift) | 畫牆、地板、窗戶與家具的色塊盒子；決定誰畫在前面。 |
 | [RoomCamera.swift](../ios/PenguinFamily/World/Room/RoomCamera.swift) | 鏡頭的數學：畫面中央對著哪一點、不超出房間、慢慢靠近目標、對齊螢幕像素。 |
 | [RoomZoom.swift](../ios/PenguinFamily/World/Room/RoomZoom.swift) | 縮放的數學：最大 3pt、最小房間左右塞滿畫面、放開後吸附、手指下那一點不動。 |
-| [RoomStage.swift](../ios/PenguinFamily/World/Room/RoomStage.swift) | 箱庭的即時狀態：鏡頭、縮放、每隻企鵝的位置與動作；每一格要畫哪些圖、點到哪一隻、要不要重畫、閒置後鏡頭回到中點。純邏輯。 |
-| [RoomView.swift](../ios/PenguinFamily/World/Room/RoomView.swift) | 放上 Metal 畫面，把點擊、拖曳、捏合與意圖交給 `RoomStage`。 |
+| [RoomStage.swift](../ios/PenguinFamily/World/Room/RoomStage.swift) | 箱庭的即時狀態：後台名單與台上的企鵝（`add`、`remove`）、鏡頭、縮放、每隻的位置與動作；每一格要畫哪些圖、點到哪一隻、要不要重畫、閒置後鏡頭回到中點。純邏輯。 |
+| [RoomView.swift](../ios/PenguinFamily/World/Room/RoomView.swift) | 放上 Metal 畫面，把點擊、拖曳、捏合、意圖與「誰在台上」交給 `RoomStage`。 |
 
 **`World/Render/`：用 Metal 畫出來**
 
@@ -99,7 +100,7 @@ App 分三層，像 Vue 的「props 往下、events 往上」：
 | [RoomTests.swift](../ios/PenguinFamilyTests/RoomTests.swift) | 房間擺放檢查、等角換算、背景與家具的畫法、前後順序。 |
 | [RoomCameraTests.swift](../ios/PenguinFamilyTests/RoomCameraTests.swift) | 鏡頭範圍、對齊像素、慢慢靠近。 |
 | [RoomZoomTests.swift](../ios/PenguinFamilyTests/RoomZoomTests.swift) | 縮放範圍、吸附、手指下那一點不動。 |
-| [RoomStageTests.swift](../ios/PenguinFamilyTests/RoomStageTests.swift) | 要畫什麼與順序、點到哪一隻（重疊時前面優先）、拖曳、捏合、各自的動作、閒置後鏡頭回去、有變化才重畫。 |
+| [RoomStageTests.swift](../ios/PenguinFamilyTests/RoomStageTests.swift) | 要畫什麼與順序、點到哪一隻（重疊時前面優先）、拖曳、捏合、各自的動作、閒置後鏡頭回去、有變化才重畫、上台與下台、一開始只有第一隻在台上。 |
 | [CodeMapTests.swift](../ios/PenguinFamilyTests/CodeMapTests.swift) | 這份文件和實際檔案一致。 |
 
 Metal 實際畫出來的樣子與手感不在單元測試裡，用模擬器截圖與實機確認。
@@ -117,6 +118,7 @@ flowchart TD
     Game --> Room["RoomView"]
     Game --> Behavior["PenguinBehavior"]
     Game --> Log["EventLog"]
+    Game --> ID
 
     subgraph World["World：畫面"]
         Library --> Compositor["RigCompositor"]
@@ -133,6 +135,7 @@ flowchart TD
         Stage --> Zoom["RoomZoom"]
         Stage --> Layout["RoomLayout"]
         Stage --> Placeholder["PlaceholderSilhouette"]
+        Stage --> ID["PenguinID"]
         RoomRenderer --> Layout
         RoomRenderer --> Grid["PixelGrid"]
         Frames --> Compositor
@@ -177,8 +180,8 @@ sequenceDiagram
     Note over Lib: 讀 rig.json，把站好與每個動作的每一格都先算好
     Lib-->>CV: 每一隻的角色，缺的是灰色剪影
     CV->>GV: 淡入主遊戲
-    GV->>RV: 房間、角色、企鵝位置、意圖（待機）
-    Note over RV: 建立 RoomStage，Metal 畫面出現時把所有圖送進 GPU
+    GV->>RV: 房間、後台名單（一家每一隻）、台上的企鵝（位置、意圖）
+    Note over RV: 建立 RoomStage、讓台上的企鵝上台；Metal 畫面出現時把後台每一隻的圖送進 GPU
     RV->>RV: 鏡頭對準企鵝，每個像素 3pt
 ```
 
@@ -196,10 +199,10 @@ sequenceDiagram
 
     Owner->>RV: 點一下
     RV->>St: 點到哪一隻？
-    St-->>RV: 第 N 隻（並重設閒置計時）
-    RV->>GV: 第 N 隻被點了
+    St-->>RV: 這一隻的 PenguinID（並重設閒置計時）
+    RV->>GV: 這一隻被點了
     GV->>Log: 記下「主人點了這隻」
-    GV->>B: 第 N 隻的狀態機收到「被點」
+    GV->>B: 這一隻的狀態機收到「被點」
     B-->>GV: 意圖變成「哈囉」
     GV->>RV: 意圖：哈囉
     RV->>St: 開始播哈囉
@@ -242,11 +245,11 @@ sequenceDiagram
 
 | [遊戲設計](product/game-design.md)的章節 | 程式 | 已做 | 還沒做 |
 |---|---|---|---|
-| 呈現（像素、等角） | `World/Pixel`、`World/Room`、`World/Render` | 正面圖、屋內箱庭、縮放、Metal 繪圖 | 背面、側面、走路 |
+| 呈現（像素、等角） | `World/Pixel`、`World/Room`、`World/Render` | 正面圖、屋內箱庭、縮放、Metal 繪圖 | 斜向與走路（圖已在私有素材 repo，還沒匯出到 App） |
 | 箱庭 | `World/Room` | 四件色塊家具、鏡頭 | 找路、庭院 |
 | 手勢 | `RoomView`、`RoomStage` | 點一下、拖曳空地、捏合 | 拎起來、抱抱 |
 | 行為與一天的節奏 | `Behavior` | 待機、哈囉 | 閒晃、睡覺、依權重反應、日夜 |
-| 兩隻 | `RoomStage`、`GameView` | 兩隻並排（第二隻是灰色剪影）、各自的狀態機與事件紀錄 | 第二隻的美術與個性、一起行動、鬥嘴 |
+| 兩隻 | `RoomStage`、`GameView` | 一家兩隻各有身分、狀態機與事件紀錄；舞台可加入、移除；寫移動的期間只有第一隻在台上（第二隻是灰色剪影，留在後台） | 第二隻上台（A1 第 8 項）、第二隻的美術與個性、一起行動、鬥嘴 |
 | 不在時的痕跡 | `Memory` | 記下點擊 | 補算小事、回來看得到 |
 | 台詞 | `Soul`（未建立） | － | 全部 |
 | 觸覺 | `Feel`（未建立） | － | 全部 |

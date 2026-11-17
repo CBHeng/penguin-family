@@ -29,7 +29,8 @@ penguin-family/                    公開 repo
 
 ## 模組邊界
 
-- **`Behavior` 只輸出意圖，`World` 負責呈現。** `Behavior` 不匯入任何繪圖框架，所以可以單獨測試，換畫面技術時也能沿用。目前的 `PenguinBehavior` 是最小狀態機：待機 →（主人點一下）→ 哈囉 →（`World` 回報播完）→ 待機；哈囉中再點會被忽略。每隻企鵝一個，`GameView` 依企鵝編號分給各自的狀態機。動作播多久由 `World` 決定，`Behavior` 不處理時間。
+- **`Behavior` 只輸出意圖，`World` 負責呈現。** `Behavior` 不匯入任何繪圖框架，所以可以單獨測試，換畫面技術時也能沿用。目前的 `PenguinBehavior` 是最小狀態機：待機 →（主人點一下）→ 哈囉 →（`World` 回報播完）→ 待機；哈囉中再點會被忽略。每隻企鵝一個，`GameView` 依企鵝的身分（`PenguinID`）分給各自的狀態機。動作播多久由 `World` 決定，`Behavior` 不處理時間。
+- **舞台分後台與台上，用身分加入、移除，不用數量**（作者 2026-11-17 決定）。`RoomStage` 建立時給後台名單（一家每一隻的身分與造型），圖在載入時一次送進 GPU；誰在台上用 `add`、`remove` 決定，只有台上的會畫、點得到、鏡頭會看。點擊、動作播完、貼圖都用 `PenguinID` 認是哪一隻，不用陣列的第幾個：台上有誰會變（寫移動時第二隻先留在後台、之後屋內與庭院之間進出），用編號會對錯隻。`PenguinID` 不是 enum，因為角色 id 不能寫進程式（見下一條）。
 - **`DialogueEngine` 是台詞來源的 protocol。** 路線一用 `ScriptedEngine`，路線二加 `CloudEngine`。決策原因見 [ADR 0002](adr/0002-hybrid-soul-engine.md)。
 - **箱庭與聊天透過事件紀錄連接。** 箱庭寫入發生的事，聊天讀取後才能提到；聊天再把主人的心情和共同回憶寫回，影響箱庭。路線一就要記下事件，避免之後重工。
 - **`CharacterPack` 把造型與個性資料化。** 換造型不用改程式，原因見 [ADR 0004](adr/0004-plush-likeness-private-use.md)。
