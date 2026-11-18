@@ -37,6 +37,49 @@ nonisolated struct CharacterRig: Decodable, Sendable {
         let rows: [String]
     }
 
+    /// 畫布上的一張圖：左上角與每列像素。
+    struct Layer: Decodable, Sendable {
+        let x: Int
+        let y: Int
+        let rows: [String]
+    }
+
+    /// 斜向四個方向（沿格線走時用）的部件與走法，畫布和正面不同。
+    /// 左前、左後帶部件；右前、右後只帶翻轉後另外放的帽子（帽子歪戴在一側，不跟著翻）。
+    struct Oblique: Decodable, Sendable {
+        let canvas: Size
+        /// 腳底中心，和正面的身體轉軸對到同一點，換方向時不會跳。
+        let anchor: RigPoint
+        /// 身體傾斜時不動的那一列。
+        let leanBaseY: Double
+        /// 近的手從這一列以下才往外張。
+        let shoulderY: Double
+        /// 右邊方向的帽子跟著這一列傾斜。
+        let hatRow: Int
+        /// 方向名稱（`Facing` 的 rawValue）→ 內容。
+        let directions: [String: Direction]
+    }
+
+    /// 斜向的一個方向。左邊方向有部件與走法；右邊方向有 `mirrorOf` 與帽子。
+    struct Direction: Decodable, Sendable {
+        let parts: [String: Layer]?
+        let drawOrder: [String]?
+        /// 往前一步在畫面上是 (x, y) 像素。
+        let forward: [Int]?
+        /// 畫面左邊的是哪一隻腳（`farFoot` 或 `nearFoot`）。
+        let leftFoot: String?
+        /// 近的手在身體哪一側：1 右、-1 左。
+        let armSide: Int?
+        /// 只整塊平移的小部件 → 錨點。
+        let rigid: [String: RigPoint]?
+        /// 被身體擋住的腳，往後踩時多往下幾格露出來。
+        let peek: [String: Int]?
+        let mirrorOf: String?
+        let hat: Layer?
+        /// 定稿圖：部件都不動時，合成結果要和它完全相同。
+        let rest: Layer
+    }
+
     let format: Int
     let canvas: Size
     let palette: [String: String]
@@ -47,6 +90,8 @@ nonisolated struct CharacterRig: Decodable, Sendable {
     let rig: Parameters
     /// 定稿正面圖在畫布上的位置與像素：部件都不動時，合成結果要和它完全相同。
     let front: Front
+    /// 斜向四個方向；舊的角色包沒有（只能面向鏡頭）。
+    let oblique: Oblique?
 }
 
 nonisolated struct RigPoint: Decodable, Equatable, Sendable {
@@ -90,4 +135,6 @@ nonisolated enum CharacterRigError: Error, Equatable {
     case missingAnchor(String)
     case unknownCode(part: String, code: Character)
     case partOutOfCanvas(String)
+    /// 斜向少了某個方向，或方向的內容不完整。
+    case invalidDirection(String)
 }

@@ -46,4 +46,43 @@ struct PenguinBehaviorTests {
         }
         #expect(intents == [.hello, .hello, .idle, .hello])
     }
+
+    // MARK: - 走路
+
+    static let goal = Tile(i: 8, j: 7)
+
+    /// 依序處理，回傳每一次有沒有改變意圖。
+    static func results(_ inputs: [PenguinBehavior.Input], from start: PenguinBehavior = PenguinBehavior())
+        -> (changed: [Bool], behavior: PenguinBehavior) {
+        var behavior = start
+        let changed = inputs.map { behavior.handle($0) }
+        return (changed, behavior)
+    }
+
+    @Test func walkRequestWhileIdleStartsWalking() {
+        let (changed, behavior) = Self.results([.walkRequested(to: Self.goal, pace: .trot)])
+        #expect(changed == [true])
+        #expect(behavior.intent == .walk(to: Self.goal, pace: .trot))
+    }
+
+    @Test func arrivingReturnsToIdle() {
+        let (changed, behavior) = Self.results([.walkRequested(to: Self.goal, pace: .walk), .arrived, .arrived])
+        #expect(changed == [true, true, false])           // 已經在待機時再收到走到：不理
+        #expect(behavior.intent == .idle)
+    }
+
+    @Test func tapsAndNewRequestsWhileWalkingAreIgnored() {
+        let (changed, behavior) = Self.results([
+            .walkRequested(to: Self.goal, pace: .walk), .ownerTapped,
+            .walkRequested(to: Tile(i: 1, j: 1), pace: .trot), .motionFinished,
+        ])
+        #expect(changed == [true, false, false, false])
+        #expect(behavior.intent == .walk(to: Self.goal, pace: .walk))
+    }
+
+    @Test func noWalkingDuringHello() {
+        let (changed, behavior) = Self.results([.ownerTapped, .walkRequested(to: Self.goal, pace: .walk)])
+        #expect(changed == [true, false])
+        #expect(behavior.intent == .hello)
+    }
 }

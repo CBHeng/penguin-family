@@ -37,8 +37,9 @@ nonisolated enum CharacterPackLibrary {
     static func load(_ pack: URL) throws -> LoadedCharacter {
         let data = try Data(contentsOf: pack.appending(path: "rig.json"))
         let compositor = try RigCompositor(rig: JSONDecoder().decode(CharacterRig.self, from: data))
+        let oblique = try ObliqueCompositor(rig: compositor.rig)
         return LoadedCharacter(id: pack.lastPathComponent, compositor: compositor,
-                               frames: CharacterFrames(compositor: compositor))
+                               frames: CharacterFrames(compositor: compositor, oblique: oblique))
     }
 
     /// 一家有幾隻企鵝。

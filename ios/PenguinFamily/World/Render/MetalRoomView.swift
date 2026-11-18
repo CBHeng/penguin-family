@@ -5,8 +5,10 @@ import SwiftUI
 /// 把 Metal 的畫面放進 SwiftUI。畫面本身不會移動，鏡頭、縮放都在繪圖時處理。
 struct MetalRoomView: UIViewRepresentable {
     let stage: RoomStage
-    /// 某隻企鵝的動作播完了（企鵝編號）。
-    var onMotionFinished: (Int) -> Void
+    /// 某隻企鵝的動作播完了。
+    var onMotionFinished: (PenguinID) -> Void
+    /// 某隻企鵝走到了哪一格。
+    var onArrived: (RoomStage.Arrival) -> Void = { _ in }
 
     func makeCoordinator() -> GameLoop {
         GameLoop(stage: stage)
@@ -24,12 +26,14 @@ struct MetalRoomView: UIViewRepresentable {
         // 顏色標成 sRGB，和 SwiftUI 的顏色、調色盤一致
         (view.layer as? CAMetalLayer)?.colorspace = CGColorSpace(name: CGColorSpace.sRGB)
         context.coordinator.onMotionFinished = onMotionFinished
+        context.coordinator.onArrived = onArrived
         context.coordinator.attach(to: view)
         return view
     }
 
     func updateUIView(_ view: MTKView, context: Context) {
         context.coordinator.onMotionFinished = onMotionFinished
+        context.coordinator.onArrived = onArrived
     }
 
     static func dismantleUIView(_ view: MTKView, coordinator: GameLoop) {
@@ -43,7 +47,8 @@ struct MetalRoomView: UIViewRepresentable {
 /// `RoomStage` 一有變化就叫醒它；閒置等待鏡頭回去時，到時間再醒來。
 final class GameLoop: NSObject {
     let stage: RoomStage
-    var onMotionFinished: (Int) -> Void = { _ in }
+    var onMotionFinished: (PenguinID) -> Void = { _ in }
+    var onArrived: (RoomStage.Arrival) -> Void = { _ in }
     private weak var view: MTKView?
     private var renderer: SpriteRenderer?
     private var link: CADisplayLink?
@@ -94,6 +99,7 @@ final class GameLoop: NSObject {
         let now = CACurrentMediaTime()
         let tick = PerfSignposts.measure("update") { stage.update(now: now) }
         for penguin in tick.motionFinished { onMotionFinished(penguin) }
+        for arrival in tick.arrived { onArrived(arrival) }
         if tick.draw { PerfSignposts.measure("draw") { view?.draw() } }
         guard !tick.keepRunning else { return }
         link.isPaused = true

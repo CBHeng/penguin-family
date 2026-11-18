@@ -90,6 +90,73 @@ struct CharacterPackParityTests {
             #expect(diff == nil, "frame \(i): \(diff ?? "")")
         }
     }
+
+    // MARK: - 斜向（走路、小跑）
+
+    /// `oblique.parity.json`：慢走、小跑在四個方向每一格的姿勢與 Python 合成結果。
+    struct ObliqueGolden: Decodable {
+        struct Frame: Decodable {
+            let lean: Double
+            let dip: Int
+            let armOpen: Double
+            let armDy: Int
+            let feet: [String: [Int]]
+            let rows: [String]
+
+            var pose: WalkPose {
+                WalkPose(lean: lean, dip: dip, armOpen: armOpen, armDy: armDy,
+                         feet: feet.mapValues { WalkPose.Offset(dx: $0[0], dy: $0[1]) })
+            }
+        }
+        let format: Int
+        let framesPerSecond: Double
+        /// 步態名稱 → 方向 → 每一格。
+        let gaits: [String: [String: [Frame]]]
+    }
+
+    static func oblique(_ pack: URL) throws -> (ObliqueCompositor, Character) {
+        let c = try compositor(pack)
+        let ob = try #require(try ObliqueCompositor(rig: c.rig), "角色包沒有斜向")
+        return (ob, Character(c.rig.empty))
+    }
+
+    @Test(.enabled(if: !packs.isEmpty, "沒有角色包（乾淨 clone），跳過"), arguments: packs)
+    func obliqueRestMatchesFinalImages(pack: URL) throws {
+        let (ob, empty) = try Self.oblique(pack)
+        for facing in Facing.oblique {
+            let got = try #require(ob.compose(facing, .rest)).rows(empty: empty)
+            let want = try #require(ob.restGrid(facing)).rows(empty: empty)
+            let diff = Self.firstDifference(got, want)
+            #expect(diff == nil, "\(facing): \(diff ?? "")")
+        }
+    }
+
+    /// App 的步態（Swift 的 `Gait`）每一格的姿勢與畫面都要和 Python 的 `walk.py` 相同。
+    @Test(.enabled(if: !packs.isEmpty, "沒有角色包（乾淨 clone），跳過"), arguments: packs)
+    func walkAndTrotMatchPythonFrameByFrame(pack: URL) throws {
+        let (ob, empty) = try Self.oblique(pack)
+        let golden = try JSONDecoder().decode(
+            ObliqueGolden.self, from: Data(contentsOf: pack.appending(path: "oblique.parity.json")))
+        #expect(golden.framesPerSecond == Gait.framesPerSecond)
+        #expect(Set(golden.gaits.keys) == Set(Gait.all.map(\.name)))
+        for gait in Gait.all {
+            for facing in Facing.oblique {
+                let frames = try #require(golden.gaits[gait.name]?[facing.rawValue], "\(gait.name) \(facing)")
+                #expect(frames.count == gait.frameCount, "\(gait.name) \(facing) 格數")
+                let side = try #require(ob.walkSide(facing))
+                for (i, frame) in frames.enumerated() {
+                    let label = "\(gait.name) \(facing) frame \(i)"
+                    let pose = gait.pose(frame: i, side: side)
+                    #expect(abs(pose.lean - frame.lean) < 1e-12, "\(label) lean")
+                    #expect(abs(pose.armOpen - frame.armOpen) < 1e-12, "\(label) armOpen")
+                    #expect(pose.dip == frame.pose.dip && pose.armDy == frame.pose.armDy && pose.feet == frame.pose.feet,
+                            "\(label) dip/armDy/feet")
+                    let diff = Self.firstDifference(try #require(ob.compose(facing, frame.pose)).rows(empty: empty), frame.rows)
+                    #expect(diff == nil, "\(label): \(diff ?? "")")
+                }
+            }
+        }
+    }
 }
 
 private extension Array {

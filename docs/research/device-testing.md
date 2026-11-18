@@ -36,7 +36,8 @@
 
 ## 本專案要注意的
 
-- **Team ID 放在不進 git 的 `ios/Config/Signing.local.xcconfig`**（作者 2026-11-16 決定）：專案層級的設定讀 `ios/Config/Base.xcconfig`，它用 `#include?` 載入本機檔，三個 target 都會繼承。沒有本機檔時照樣能在模擬器編譯（2026-11-16 實測）。在 Xcode 的 Team 選單重選會把 Team ID 寫回 `project.pbxproj`，commit 前要檢查（見[資安檢查](public-repo-security.md)）。
+- **Team ID 放在不進 git 的 `ios/Config/Signing.local.xcconfig`**（作者 2026-11-16 決定）：專案層級的設定讀 `ios/Config/Base.xcconfig`，它用 `#include?` 載入本機檔，三個 target 都會繼承。沒有本機檔時照樣能在模擬器編譯（2026-11-16 實測）。在 Xcode 的 Team 選單重選會把 Team ID 寫回 `project.pbxproj`，commit 前要檢查（見[資安檢查](public-repo-security.md)）。2026-11-18 作者沒有動 Team 選單，從 Xcode 按 Run 裝到手機後，`project.pbxproj` 的 Debug、Release 也各多了一行 `DEVELOPMENT_TEAM`，已還原；所以用 Xcode 裝過之後一律先看 `git status`。
+- **在 Xcode 把 Run 改成 Release**（Product → Scheme → Edit Scheme… → Run → Build Configuration）會建共用的 scheme 檔 `xcshareddata/xcschemes/`，已放進 `.gitignore`（作者 2026-11-18 決定，是個人偏好）。判斷手感要用 Release：Debug 沒有最佳化，載入時合成每一格慢很多。
 - **角色包會跟著裝到手機**：只限作者自己的裝置，符合 [ADR 0004](../adr/0004-plush-likeness-private-use.md) 的自用範圍。
 - **`CharacterPacks.bundle` 沒有 Info.plist**：2026-11-16 實機簽署、安裝、執行都正常。
 
