@@ -41,6 +41,22 @@ struct GameView: View {
         Array(family.prefix(1))
     }
 
+    /// 試走的固定路線（作者 2026-11-18 決定：閒晃做好之前，開場自動走一段）。第 7 項閒晃做好後拿掉。
+    /// 從 (4, 4) 出發，四個方向都會走到，也會繞過沙發（i = 7、j = 6～8）：
+    /// 1. 慢走到沙發右側：往右前、再往左前。
+    /// 2. 小跑從沙發前面繞到另一側：往左前、左後、右後（往前或往後繞一樣短，照固定順序挑前面）。
+    /// 3. 慢走回起點：往左後、再往右後。
+    static let demoRoute: [(tile: Tile, pace: PenguinBehavior.Pace)] = [
+        (Tile(i: 8, j: 7), .walk),
+        (Tile(i: 5, j: 7), .trot),
+        (Tile(i: 4, j: 4), .walk),
+    ]
+    /// 開場、每段之間停多久（秒）。「走幾步就停一下」（遊戲設計），實機上調。
+    static let demoPause: Duration = .seconds(1.5)
+
+    /// 試走走到第幾段了。
+    @State private var demoLeg = 0
+
     var body: some View {
         ZStack(alignment: .top) {
             Self.outsideColor
@@ -52,7 +68,8 @@ struct GameView: View {
                     members.first { $0.id == id }.map { .init(id: id, position: $0.position, intent: $0.behavior.intent) }
                 },
                 onTap: ownerTapped,
-                onMotionFinished: { id in update(id) { $0.behavior.handle(.motionFinished) } })
+                onMotionFinished: { id in update(id) { $0.behavior.handle(.motionFinished) } },
+                onArrived: arrived)
             .ignoresSafeArea()
             if members.allSatisfy({ $0.character == nil }) {
                 Text("沒有角色包")
@@ -60,6 +77,31 @@ struct GameView: View {
                     .foregroundStyle(.white)
                     .padding(6)
                     .background(.black.opacity(0.4), in: Capsule())
+            }
+        }
+        .task { await walkNextDemoLeg() }
+    }
+
+    /// 走到了：記下新位置，讓狀態機回到待機；試走還有下一段就停一下再走。
+    private func arrived(_ arrival: RoomStage.Arrival) {
+        update(arrival.id) {
+            $0.position = arrival.tile.center
+            $0.behavior.handle(.arrived)
+        }
+        Task { await walkNextDemoLeg() }
+    }
+
+    /// 停一下，再讓台上第一隻走試走路線的下一段。正在做別的事（例如哈囉）就等一下再試。
+    private func walkNextDemoLeg() async {
+        while demoLeg < Self.demoRoute.count {
+            try? await Task.sleep(for: Self.demoPause)
+            guard !Task.isCancelled, demoLeg < Self.demoRoute.count, let id = onStage.first,
+                  let index = members.firstIndex(where: { $0.id == id }) else { return }
+            if case .walk = members[index].behavior.intent { return }   // 已經在走（另一個等待先開始了）
+            let leg = Self.demoRoute[demoLeg]
+            if members[index].behavior.handle(.walkRequested(to: leg.tile, pace: leg.pace)) {
+                demoLeg += 1
+                return
             }
         }
     }

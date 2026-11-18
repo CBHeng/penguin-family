@@ -276,6 +276,146 @@ struct RoomStageTests {
         #expect(stage.feet(of: Self.ids[0]) == PixelPoint(x: 192, y: 136))
     }
 
+    // MARK: - 走路（A1 第 6 項）
+
+    /// 只有第一隻在台上，站在 (4.5, 4.5)，造型有斜向（`ObliqueCompositorTests` 的假角色）。
+    /// 主人「剛碰過」，鏡頭不會自己移動，只看走路。
+    static func walkingStage(withCharacter: Bool = true) throws -> RoomStage {
+        let rig = try RigCompositor(rig: RigCompositorTests.decode(ObliqueCompositorTests.json))
+        let frames = CharacterFrames(compositor: rig, oblique: try ObliqueCompositorTests.compositor())
+        let stage = RoomStage(room: .indoor, cast: [.init(id: ids[0], frames: withCharacter ? frames : nil)])
+        stage.add(ids[0], at: positions[0])
+        stage.resize(viewport: CGSize(width: 402, height: 874), displayScale: 3)
+        stage.ownerTouched(now: 1000)
+        return stage
+    }
+
+    static func penguinKey(_ stage: RoomStage) -> RoomStage.SpriteKey? {
+        stage.sprites().first { if case .furniture = $0.key { false } else { $0.key != .background } }?.key
+    }
+
+    @Test func walksAlongThePathAtTheGaitSpeed() throws {
+        let stage = try Self.walkingStage()
+        let id = Self.ids[0]
+        stage.setIntent(.walk(to: Tile(i: 8, j: 4), pace: .walk), for: id, now: 0)   // 往右下（i 往前）走 4 格
+        #expect(stage.facing(of: id) == .frontRight)
+        _ = stage.update(now: 1)
+        #expect(stage.position(of: id) == TilePosition(i: 5.0, j: 4.5))            // 慢走每秒半格
+        #expect(Self.penguinKey(stage) == .penguinGait(id, gait: "walk", facing: .frontRight, frame: 0))
+        _ = stage.update(now: 2.25)
+        #expect(stage.position(of: id) == TilePosition(i: 5.625, j: 4.5))
+        #expect(Self.penguinKey(stage) == .penguinGait(id, gait: "walk", facing: .frontRight, frame: 3))
+        let tick = stage.update(now: 8)
+        #expect(tick.arrived == [RoomStage.Arrival(id: id, tile: Tile(i: 8, j: 4))])
+        #expect(stage.position(of: id) == Tile(i: 8, j: 4).center)
+        #expect(Self.penguinKey(stage) == .penguinStanding(id, .frontRight))       // 走到後維持走的方向
+        #expect(stage.update(now: 9).arrived.isEmpty)                              // 只回報一次
+    }
+
+    @Test func positionOnlyMovesOnAnimationFrames() throws {
+        let stage = try Self.walkingStage()
+        stage.setIntent(.walk(to: Tile(i: 8, j: 4), pace: .walk), for: Self.ids[0], now: 0)
+        let first = stage.update(now: 1)
+        #expect(first.draw && first.keepRunning)
+        let same = stage.update(now: 1.05)                                         // 還在第 12 格
+        #expect(!same.draw && same.keepRunning)
+        #expect(stage.position(of: Self.ids[0]) == TilePosition(i: 5.0, j: 4.5))
+    }
+
+    @Test func turnsAtTheCornerAndGoesAroundTheSofa() throws {
+        let stage = try Self.walkingStage()
+        let id = Self.ids[0]
+        // 沙發在 i = 7、j = 6～8，先往 j 走會被擋，所以先往右前（i）再往左前（j）
+        stage.setIntent(.walk(to: Tile(i: 8, j: 7), pace: .walk), for: id, now: 0)
+        _ = stage.update(now: 7.5)
+        #expect(stage.facing(of: id) == .frontRight)
+        _ = stage.update(now: 8)                                                   // 剛好走到轉角
+        #expect(stage.facing(of: id) == .frontLeft && stage.position(of: id) == Tile(i: 8, j: 4).center)
+        #expect(stage.update(now: 14).arrived.map(\.tile) == [Tile(i: 8, j: 7)])
+    }
+
+    @Test func trotIsTwiceAsFast() throws {
+        let stage = try Self.walkingStage()
+        stage.setIntent(.walk(to: Tile(i: 8, j: 4), pace: .trot), for: Self.ids[0], now: 0)
+        _ = stage.update(now: 1.5)
+        #expect(Self.penguinKey(stage) == .penguinGait(Self.ids[0], gait: "trot", facing: .frontRight, frame: 0))
+        #expect(stage.update(now: 3.9).arrived.isEmpty)
+        #expect(stage.update(now: 4).arrived.count == 1)
+    }
+
+    @Test func unreachableGoalArrivesRightAwayWhereItStands() throws {
+        let stage = try Self.walkingStage()
+        stage.setIntent(.walk(to: Tile(i: 7, j: 7), pace: .walk), for: Self.ids[0], now: 0)   // 沙發上
+        #expect(stage.update(now: 0.01).arrived.map(\.tile) == [Tile(i: 4, j: 4)])
+        #expect(stage.facing(of: Self.ids[0]) == .front)
+    }
+
+    @Test func positionFromOutsideIsIgnoredWhileWalking() throws {
+        let stage = try Self.walkingStage()
+        let id = Self.ids[0]
+        stage.setIntent(.walk(to: Tile(i: 8, j: 4), pace: .walk), for: id, now: 0)
+        _ = stage.update(now: 2)
+        stage.setPosition(Self.positions[0], for: id)                              // 外面還記著出發點
+        #expect(stage.position(of: id) == TilePosition(i: 5.5, j: 4.5))
+    }
+
+    @Test func helloTurnsToTheFront() throws {
+        let stage = try Self.walkingStage()
+        let id = Self.ids[0]
+        stage.setIntent(.walk(to: Tile(i: 5, j: 4), pace: .walk), for: id, now: 0)
+        _ = stage.update(now: 2)
+        stage.setIntent(.idle, for: id, now: 2)
+        #expect(stage.facing(of: id) == .frontRight)                               // 待機時維持走的方向
+        stage.setIntent(.hello, for: id, now: 3)
+        _ = stage.update(now: 3.5)
+        #expect(stage.facing(of: id) == .front)
+        #expect(Self.penguinKey(stage) == .penguinFrame(id, motion: "hello", frame: 10))
+    }
+
+    @Test func penguinBesideTheSofaIsDrawnInFront() throws {
+        // 沙發佔 i = 7、j = 6～8，最靠近主人的角很低；站在它右前方 (8, 7) 的企鵝要畫在沙發前面
+        let sofa = try #require(RoomLayout.indoor.furniture.firstIndex { $0.kind == .sofa })
+        func order(at position: TilePosition) throws -> (sofa: Int, penguin: Int) {
+            let stage = try Self.stage(positions: [position])
+            let sprites = stage.sprites()
+            return (try #require(sprites.firstIndex { $0.key == .furniture(sofa) }),
+                    try #require(sprites.firstIndex { $0.key == .penguinRest(Self.ids[0]) }))
+        }
+        let beside = try order(at: Tile(i: 8, j: 7).center)
+        #expect(beside.penguin > beside.sofa)
+        let behind = try order(at: Tile(i: 6, j: 7).center)                       // 左後方：在沙發後面
+        #expect(behind.penguin < behind.sofa)
+        let between = try order(at: TilePosition(i: 8.5, j: 7.0))                  // 走在兩格中間也一樣
+        #expect(between.penguin > between.sofa)
+    }
+
+    @Test func relationToFurnitureByTiles() {
+        let sofa = TileRect(x: 7, y: 6, width: 1, height: 3)
+        #expect(RoomStage.relation(of: Tile(i: 8, j: 7).center, to: sofa) == .front)
+        #expect(RoomStage.relation(of: Tile(i: 7, j: 9).center, to: sofa) == .front)
+        #expect(RoomStage.relation(of: Tile(i: 6, j: 7).center, to: sofa) == .behind)
+        #expect(RoomStage.relation(of: Tile(i: 7, j: 5).center, to: sofa) == .behind)
+        #expect(RoomStage.relation(of: Tile(i: 8, j: 5).center, to: sofa) == .unknown)   // 斜對角
+    }
+
+    @Test func everyWalkingSpriteHasABitmap() throws {
+        let stage = try Self.walkingStage()
+        let bitmaps = stage.allBitmaps()
+        stage.setIntent(.walk(to: Tile(i: 5, j: 7), pace: .trot), for: Self.ids[0], now: 0)
+        for t in stride(from: 0.0, through: 6, by: 1.0 / 12) {
+            _ = stage.update(now: t)
+            for sprite in stage.sprites() { #expect(bitmaps[sprite.key] != nil, "\(sprite.key) 沒有圖") }
+        }
+    }
+
+    @Test func placeholderSlidesAlong() throws {
+        let stage = try Self.walkingStage(withCharacter: false)
+        stage.setIntent(.walk(to: Tile(i: 6, j: 4), pace: .walk), for: Self.ids[0], now: 0)
+        _ = stage.update(now: 2)
+        #expect(Self.penguinKey(stage) == .placeholder)
+        #expect(stage.feet(of: Self.ids[0]) == IsoProjection(room: .indoor).feet(at: TilePosition(i: 5.5, j: 4.5)))
+    }
+
     // MARK: - 一家
 
     @Test func eventLogNamesEachPenguin() {

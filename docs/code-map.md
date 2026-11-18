@@ -29,7 +29,7 @@ App 分三層，像 Vue 的「props 往下、events 往上」：
 | [PenguinFamilyApp.swift](../ios/PenguinFamily/PenguinFamilyApp.swift) | App 進入點：開事件紀錄的資料庫（打不開就改用暫存，企鵝照樣能用），放上 `ContentView`。 |
 | [ContentView.swift](../ios/PenguinFamily/ContentView.swift) | 先顯示載入畫面，在背景做初始化（載入角色、預先算好每一格、打開事件紀錄），完成後淡入主遊戲。新增的初始化放在這裡的 `load()`。 |
 | [LoadingView.swift](../ios/PenguinFamily/LoadingView.swift) | 載入畫面：和箱庭外面同一個底色，三個像素方塊輪流亮。暫時的樣子。 |
-| [GameView.swift](../ios/PenguinFamily/GameView.swift) | 主遊戲的接線員：一家每一隻各有身分、狀態機與位置，決定誰在台上（目前只有第一隻）；主人點了哪一隻就交給那一隻，再把事件丟給事件紀錄在背景寫入。 |
+| [GameView.swift](../ios/PenguinFamily/GameView.swift) | 主遊戲的接線員：一家每一隻各有身分、狀態機與位置，決定誰在台上（目前只有第一隻）；主人點了哪一隻就交給那一隻，再把事件丟給事件紀錄在背景寫入；走到時記下新位置。暫時有試走的固定路線（第 7 項閒晃做好後拿掉）。 |
 
 ### World：畫面
 
@@ -62,14 +62,14 @@ App 分三層，像 Vue 的「props 往下、events 往上」：
 | [RoomRenderer.swift](../ios/PenguinFamily/World/Room/RoomRenderer.swift) | 畫牆、地板、窗戶與家具的色塊盒子；決定誰畫在前面。 |
 | [RoomCamera.swift](../ios/PenguinFamily/World/Room/RoomCamera.swift) | 鏡頭的數學：畫面中央對著哪一點、不超出房間、慢慢靠近目標、對齊螢幕像素。 |
 | [RoomZoom.swift](../ios/PenguinFamily/World/Room/RoomZoom.swift) | 縮放的數學：最大 3pt、最小房間左右塞滿畫面、放開後吸附、手指下那一點不動。 |
-| [RoomStage.swift](../ios/PenguinFamily/World/Room/RoomStage.swift) | 箱庭的即時狀態：後台名單與台上的企鵝（`add`、`remove`）、鏡頭、縮放、每隻的位置與動作；每一格要畫哪些圖、點到哪一隻、要不要重畫、閒置後鏡頭回到中點。純邏輯。 |
+| [RoomStage.swift](../ios/PenguinFamily/World/Room/RoomStage.swift) | 箱庭的即時狀態：後台名單與台上的企鵝（`add`、`remove`）、鏡頭、縮放、每隻的位置、面向與動作；走路（找路、照步態速度沿路走、走到回報）；每一格要畫哪些圖（企鵝在家具旁邊時依格子關係排前後）、點到哪一隻、要不要重畫、閒置後鏡頭回到中點。純邏輯。 |
 | [RoomView.swift](../ios/PenguinFamily/World/Room/RoomView.swift) | 放上 Metal 畫面，把點擊、拖曳、捏合、意圖與「誰在台上」交給 `RoomStage`；舞台在第一次出現時才建，之後沿用。 |
 
 **`World/Render/`：用 Metal 畫出來**
 
 | 檔案 | 職責 |
 |---|---|
-| [MetalRoomView.swift](../ios/PenguinFamily/World/Render/MetalRoomView.swift) | 把 Metal 畫面放進 SwiftUI；`GameLoop` 跟著螢幕更新（最高到手機支援的更新率），有變化才畫，沒事時暫停。 |
+| [MetalRoomView.swift](../ios/PenguinFamily/World/Render/MetalRoomView.swift) | 把 Metal 畫面放進 SwiftUI；`GameLoop` 跟著螢幕更新（最高到手機支援的更新率），有變化才畫，沒事時暫停；把動作播完、走到回報出去。 |
 | [SpriteRenderer.swift](../ios/PenguinFamily/World/Render/SpriteRenderer.swift) | 載入時把所有圖送進 GPU；每一格照 `RoomStage` 的清單貼圖，對齊同一個像素格子、不平滑。shader 在同資料夾的 `Sprites.metal`。 |
 | [PerfSignposts.swift](../ios/PenguinFamily/World/Render/PerfSignposts.swift) | 量效能用的標記（signpost）：遊戲迴圈每一格、算、畫、等畫布、點擊各花多久，在 Instruments 的 Points of Interest 看。 |
 
@@ -77,7 +77,7 @@ App 分三層，像 Vue 的「props 往下、events 往上」：
 
 | 檔案 | 職責 |
 |---|---|
-| [PenguinBehavior.swift](../ios/PenguinFamily/Behavior/PenguinBehavior.swift) | 狀態機：待機 →（被點）→ 哈囉 →（播完）→ 待機；哈囉中再點會被忽略。只輸出意圖，不管動畫播多久。 |
+| [PenguinBehavior.swift](../ios/PenguinFamily/Behavior/PenguinBehavior.swift) | 狀態機：待機 →（被點）→ 哈囉 →（播完）→ 待機；待機 →（要牠走去某一格）→ 走路 →（走到）→ 待機。哈囉中、走路中再點會被忽略。只輸出意圖，不管動畫播多久、怎麼走過去。 |
 
 ### Memory：發生過什麼
 
@@ -105,7 +105,7 @@ App 分三層，像 Vue 的「props 往下、events 往上」：
 | [RoomPathTests.swift](../ios/PenguinFamilyTests/RoomPathTests.swift) | 站得上去的格子、方向對到哪張圖、直線、轉彎最少、繞過沙發、每次同一條路、到不了的情況、屋內每塊地板都走得到。 |
 | [RoomCameraTests.swift](../ios/PenguinFamilyTests/RoomCameraTests.swift) | 鏡頭範圍、對齊像素、慢慢靠近。 |
 | [RoomZoomTests.swift](../ios/PenguinFamilyTests/RoomZoomTests.swift) | 縮放範圍、吸附、手指下那一點不動。 |
-| [RoomStageTests.swift](../ios/PenguinFamilyTests/RoomStageTests.swift) | 要畫什麼與順序、點到哪一隻（重疊時前面優先）、拖曳、捏合、各自的動作、閒置後鏡頭回去、有變化才重畫、上台與下台、一開始只有第一隻在台上、重新建立 `RoomView` 不會重建舞台。 |
+| [RoomStageTests.swift](../ios/PenguinFamilyTests/RoomStageTests.swift) | 要畫什麼與順序、點到哪一隻（重疊時前面優先）、拖曳、捏合、各自的動作、閒置後鏡頭回去、有變化才重畫、上台與下台、一開始只有第一隻在台上、重新建立 `RoomView` 不會重建舞台、走路、企鵝在家具旁邊時的前後。 |
 | [CodeMapTests.swift](../ios/PenguinFamilyTests/CodeMapTests.swift) | 這份文件和實際檔案一致。 |
 
 Metal 實際畫出來的樣子與手感不在單元測試裡，用模擬器截圖與實機確認。
@@ -254,10 +254,10 @@ sequenceDiagram
 
 | [遊戲設計](product/game-design.md)的章節 | 程式 | 已做 | 還沒做 |
 |---|---|---|---|
-| 呈現（像素、等角） | `World/Pixel`、`World/Room`、`World/Render` | 正面圖、屋內箱庭、縮放、Metal 繪圖 | 斜向與走路（圖已在私有素材 repo，還沒匯出到 App） |
-| 箱庭 | `World/Room` | 四件色塊家具、鏡頭 | 找路、庭院 |
+| 呈現（像素、等角） | `World/Pixel`、`World/Room`、`World/Render` | 正面圖、斜向四個方向、慢走與小跑、屋內箱庭、縮放、Metal 繪圖 | 其他動作（打瞌睡、被拎著等） |
+| 箱庭 | `World/Room` | 四件色塊家具、鏡頭、找路（沿格線、繞過家具） | 庭院 |
 | 手勢 | `RoomView`、`RoomStage` | 點一下、拖曳空地、捏合 | 拎起來、抱抱 |
-| 行為與一天的節奏 | `Behavior` | 待機、哈囉 | 閒晃、睡覺、依權重反應、日夜 |
+| 行為與一天的節奏 | `Behavior` | 待機、哈囉、走去某一格（目前由試走路線觸發） | 閒晃、睡覺、依權重反應、日夜 |
 | 兩隻 | `RoomStage`、`GameView` | 一家兩隻各有身分、狀態機與事件紀錄；舞台可加入、移除；寫移動的期間只有第一隻在台上（第二隻是灰色剪影，留在後台） | 第二隻上台（A1 第 8 項）、第二隻的美術與個性、一起行動、鬥嘴 |
 | 不在時的痕跡 | `Memory` | 記下點擊 | 補算小事、回來看得到 |
 | 台詞 | `Soul`（未建立） | － | 全部 |

@@ -26,9 +26,21 @@ final class RoomStage {
     enum SpriteKey: Hashable, Sendable {
         case background
         case furniture(Int)
+        /// 正面站好。
         case penguinRest(PenguinID)
+        /// 正面動作（哈囉）的第幾格。
         case penguinFrame(PenguinID, motion: String, frame: Int)
+        /// 斜向站著（走到後維持走的方向）。
+        case penguinStanding(PenguinID, Facing)
+        /// 斜向走路：哪個步態、哪個方向、一個循環的第幾格。
+        case penguinGait(PenguinID, gait: String, facing: Facing, frame: Int)
         case placeholder
+    }
+
+    /// 某隻企鵝走到了哪一格（到不了時是原地那一格）。
+    struct Arrival: Equatable, Sendable {
+        let id: PenguinID
+        let tile: Tile
     }
 
     /// 要畫的一張圖：放在箱庭圖上的哪裡（像素）。
@@ -53,6 +65,8 @@ final class RoomStage {
         var draw = false
         /// 剛播完動作的企鵝，要回報給各自的 `Behavior`。
         var motionFinished: [PenguinID] = []
+        /// 剛走到的企鵝，要回報給各自的 `Behavior`。
+        var arrived: [Arrival] = []
         /// 還有東西在動，下一格要繼續跑；否則遊戲迴圈可以暫停。
         var keepRunning = false
         /// 暫停後要在這個時間醒來（例如閒置一段時間後鏡頭回到企鵝身邊）。
@@ -63,10 +77,24 @@ final class RoomStage {
     private struct Penguin {
         let id: PenguinID
         let frames: CharacterFrames?
+        /// 站在地板的哪一點；走路時一直變。
+        var position: TilePosition
         var feet: PixelPoint
+        /// 面向哪裡：一開始面向鏡頭；走路時是這一段的方向，走到後維持；哈囉時轉回正面。
+        var facing: Facing = .front
         var intent: PenguinBehavior.Intent?
         var playing: (motion: Motion, start: Double)?
         var currentFrame: Int?
+        var walking: Walk?
+    }
+
+    /// 正在走的一段路。
+    private struct Walk {
+        let path: RoomPath
+        let gait: Gait
+        let start: Double
+        /// 走到第幾格動畫了（每秒 12 格）；位置也只在換格時前進，和看過的 GIF 一樣。
+        var frame = 0
     }
 
     let room: RoomLayout
@@ -125,12 +153,18 @@ final class RoomStage {
     /// 台上某隻企鵝的腳底在箱庭圖上的位置（像素）；不在台上是 nil。
     func feet(of id: PenguinID) -> PixelPoint? { penguins.first { $0.id == id }?.feet }
 
+    /// 台上某隻企鵝站在地板的哪一點；不在台上是 nil。
+    func position(of id: PenguinID) -> TilePosition? { penguins.first { $0.id == id }?.position }
+
+    /// 台上某隻企鵝面向哪裡；不在台上是 nil。
+    func facing(of id: PenguinID) -> Facing? { penguins.first { $0.id == id }?.facing }
+
     // MARK: - 上台、下台
 
     /// 讓後台名單裡的一隻站到 `position` 上台。不在名單裡、或已經在台上時不做事。
     func add(_ id: PenguinID, at position: TilePosition) {
         guard !penguins.contains(where: { $0.id == id }), let member = cast.first(where: { $0.id == id }) else { return }
-        penguins.append(Penguin(id: id, frames: member.frames, feet: iso.feet(at: position)))
+        penguins.append(Penguin(id: id, frames: member.frames, position: position, feet: iso.feet(at: position)))
         changed()
     }
 
@@ -158,6 +192,18 @@ final class RoomStage {
                     all[.penguinFrame(member.id, motion: motion.name, frame: frame)] = frames.image(motion, frame: frame)
                 }
             }
+            guard let oblique = frames.oblique else { continue }
+            for (facing, image) in oblique.standing {
+                all[.penguinStanding(member.id, facing)] = image
+            }
+            for gait in Gait.all {
+                for facing in Facing.oblique {
+                    for frame in 0..<oblique.frameCount(gait, facing) {
+                        all[.penguinGait(member.id, gait: gait.name, facing: facing, frame: frame)] =
+                            oblique.image(gait, facing, frame: frame)
+                    }
+                }
+            }
         }
         return all
     }
@@ -177,26 +223,50 @@ final class RoomStage {
         changed()
     }
 
-    /// 台上某隻的意圖變了：換播對應的動作。不在台上或意圖沒變時不做事。
+    /// 台上某隻的意圖變了：換播對應的動作，或開始走路。不在台上或意圖沒變時不做事。
+    /// - 哈囉：先轉回正面（哈囉只有正面的圖），作者 2026-11-18 決定。
+    /// - 走路：從現在站的那一格找路；到不了時停在原地，下一格就回報走到（`Tick.arrived`）。
+    /// - 待機：不換方向，走到後維持走的方向。
     func setIntent(_ newIntent: PenguinBehavior.Intent, for id: PenguinID, now: Double) {
         guard let index = penguins.firstIndex(where: { $0.id == id }), newIntent != penguins[index].intent else { return }
         penguins[index].intent = newIntent
         penguins[index].playing = Self.motion(for: newIntent).map { ($0, now) }
+        penguins[index].walking = nil
+        switch newIntent {
+        case .idle:
+            break
+        case .hello:
+            penguins[index].facing = .front
+        case .walk(let goal, let pace):
+            let here = Tile(containing: penguins[index].position)
+            let path = RoomPath.find(in: room, from: here, to: goal) ?? RoomPath(tiles: [here])
+            penguins[index].walking = Walk(path: path, gait: Self.gait(for: pace), start: now)
+            moveAlong(index, distance: 0)
+        }
         changed()
     }
 
-    /// 台上某隻換位置。不在台上或位置沒變時不做事。
+    /// 台上某隻換位置。不在台上、正在走路（位置由走路決定）或位置沒變時不做事。
     func setPosition(_ position: TilePosition, for id: PenguinID) {
-        let feet = iso.feet(at: position)
-        guard let index = penguins.firstIndex(where: { $0.id == id }), feet != penguins[index].feet else { return }
-        penguins[index].feet = feet
+        guard let index = penguins.firstIndex(where: { $0.id == id }), penguins[index].walking == nil,
+              position != penguins[index].position else { return }
+        penguins[index].position = position
+        penguins[index].feet = iso.feet(at: position)
         changed()
     }
 
-    /// 意圖要播哪個動作；待機不播。
+    /// 走路的快慢用哪個步態。
+    static func gait(for pace: PenguinBehavior.Pace) -> Gait {
+        switch pace {
+        case .walk: .walk
+        case .trot: .trot
+        }
+    }
+
+    /// 意圖要播哪個正面動作；待機與走路不播（走路用斜向的步態）。
     static func motion(for intent: PenguinBehavior.Intent) -> Motion? {
         switch intent {
-        case .idle: nil
+        case .idle, .walk: nil
         case .hello: .hello
         }
     }
@@ -281,6 +351,7 @@ final class RoomStage {
                 penguins[index].currentFrame = frame
                 needsDraw = true
             }
+            if let arrival = advanceWalk(index, now: now) { tick.arrived.append(arrival) }
         }
 
         var returning = false
@@ -305,7 +376,7 @@ final class RoomStage {
 
         tick.draw = needsDraw
         needsDraw = false
-        let anyPlaying = penguins.contains { $0.playing != nil }
+        let anyPlaying = penguins.contains { $0.playing != nil || $0.walking != nil }
         tick.keepRunning = anyPlaying || returning || lastDrag != nil || pinchStart != nil
         if tick.keepRunning {
             tick.wakeAt = nil
@@ -326,13 +397,49 @@ final class RoomStage {
     }
 
     /// 這一格要畫的圖，由遠到近：背景先畫，越靠近主人（畫面越下方）畫在越前面。
+    ///
+    /// 家具依「最靠近主人的角」排；企鵝再一隻隻插進去，先照腳底高度，再照格子關係修正（2026-11-18）：
+    /// 長家具（例如佔三格的沙發）最近的角很低，只比腳底高度的話，站在它旁邊前方的企鵝會被畫到後面。
     func sprites() -> [Sprite] {
-        var items: [(id: Sprite, depth: Int)] = furnitureSprites.map { ($0.sprite, $0.depth) }
-        for index in penguins.indices {
-            items.append((sprite(of: index), penguins[index].feet.y))
+        let furniture = RoomRenderer.drawOrder(furnitureSprites.map { ($0.sprite, $0.depth) })
+        var order: [(sprite: Sprite, depth: Int, footprint: TileRect?)] = furniture.map { sprite in
+            guard case .furniture(let i) = sprite.key else { return (sprite, 0, nil) }
+            return (sprite, furnitureSprites[i].depth, room.furniture[i].footprint)
+        }
+        // 企鵝之間：腳底高的先畫；一樣時後上台的畫在後面（前面）
+        for index in penguins.indices.sorted(by: { (penguins[$0].feet.y, $0) < (penguins[$1].feet.y, $1) }) {
+            let penguin = penguins[index]
+            var at = order.firstIndex { $0.depth > penguin.feet.y } ?? order.count
+            for (k, item) in order.enumerated() {
+                guard let footprint = item.footprint else { continue }
+                switch Self.relation(of: penguin.position, to: footprint) {
+                case .front where k >= at: at = k + 1
+                case .behind where k < at: at = k
+                default: break
+                }
+            }
+            order.insert((sprite(of: index), penguin.feet.y, nil), at: at)
         }
         let background = Sprite(key: .background, x: 0, y: 0, width: iso.canvasWidth, height: iso.canvasHeight)
-        return [background] + RoomRenderer.drawOrder(items)
+        return [background] + order.map(\.sprite)
+    }
+
+    /// 企鵝和一件家具的前後。
+    enum Relation: Equatable {
+        case front, behind, unknown
+    }
+
+    /// 企鵝當作佔一格（以牠站的點為中心）：沿 i 軸或 j 軸整個在家具後面（離主人更近）就畫在前面，
+    /// 整個在家具前面就畫在後面；斜對角或兩邊都成立時看不出來，交給腳底高度決定。
+    static func relation(of position: TilePosition, to footprint: TileRect) -> Relation {
+        let tolerance = 1e-9
+        let front = position.i - 0.5 >= Double(footprint.maxX) - tolerance
+            || position.j - 0.5 >= Double(footprint.maxY) - tolerance
+        let behind = position.i + 0.5 <= Double(footprint.x) + tolerance
+            || position.j + 0.5 <= Double(footprint.y) + tolerance
+        if front && !behind { return .front }
+        if behind && !front { return .behind }
+        return .unknown
     }
 
     private func sprite(of index: Int) -> Sprite {
@@ -342,12 +449,65 @@ final class RoomStage {
             return Sprite(key: .placeholder, x: penguin.feet.x - a.x, y: penguin.feet.y - a.y,
                           width: g.width, height: g.height)
         }
+        // 斜向：走路用步態的那一格；站著用斜向站姿。角色包沒有斜向時退回正面
+        if penguin.facing != .front, let oblique = frames.oblique {
+            var key: SpriteKey?
+            if let walk = penguin.walking, oblique.frameCount(walk.gait, penguin.facing) > 0 {
+                let frame = walk.frame % oblique.frameCount(walk.gait, penguin.facing)
+                key = .penguinGait(penguin.id, gait: walk.gait.name, facing: penguin.facing, frame: frame)
+            } else if oblique.standing[penguin.facing] != nil {
+                key = .penguinStanding(penguin.id, penguin.facing)
+            }
+            if let key {
+                return Sprite(key: key, x: penguin.feet.x - oblique.anchor.x, y: penguin.feet.y - oblique.anchor.y,
+                              width: oblique.width, height: oblique.height)
+            }
+        }
         var key = SpriteKey.penguinRest(penguin.id)
         if let playing = penguin.playing, let frame = penguin.currentFrame, frame < frames.frameCount(of: playing.motion) {
             key = .penguinFrame(penguin.id, motion: playing.motion.name, frame: max(0, frame))
         }
         return Sprite(key: key, x: penguin.feet.x - frames.anchor.x, y: penguin.feet.y - frames.anchor.y,
                       width: frames.width, height: frames.height)
+    }
+
+    // MARK: - 走路
+
+    /// 推進一隻正在走的企鵝：位置只在換動畫格時前進（每秒 12 格），走到時回報。
+    private func advanceWalk(_ index: Int, now: Double) -> Arrival? {
+        guard var walk = penguins[index].walking else { return nil }
+        let frame = max(0, Int(((now - walk.start) * Gait.framesPerSecond).rounded(.down)))
+        let distance = walk.gait.tilesPerSecond * Double(frame) / Gait.framesPerSecond
+        if distance >= Double(walk.path.steps) {
+            moveAlong(index, distance: Double(walk.path.steps))
+            penguins[index].walking = nil
+            needsDraw = true
+            return Arrival(id: penguins[index].id, tile: walk.path.goal)
+        }
+        guard frame != walk.frame else { return nil }
+        walk.frame = frame
+        penguins[index].walking = walk
+        moveAlong(index, distance: distance)
+        needsDraw = true
+        return nil
+    }
+
+    /// 把正在走的企鵝放到路上走了 `distance` 格的地方，面向這一段的方向（剛好在轉角時面向下一段）。
+    private func moveAlong(_ index: Int, distance: Double) {
+        guard let path = penguins[index].walking?.path else { return }
+        let tiles = path.tiles
+        guard tiles.count > 1 else {
+            penguins[index].position = tiles[0].center
+            penguins[index].feet = iso.feet(at: tiles[0].center)
+            return
+        }
+        let segment = min(Int(distance.rounded(.down)), tiles.count - 2)
+        let fraction = distance - Double(segment)
+        let a = tiles[segment].center, b = tiles[segment + 1].center
+        let position = TilePosition(i: a.i + (b.i - a.i) * fraction, j: a.j + (b.j - a.j) * fraction)
+        penguins[index].position = position
+        penguins[index].feet = iso.feet(at: position)
+        if let step = Step(from: tiles[segment], to: tiles[segment + 1]) { penguins[index].facing = step.facing }
     }
 
     // MARK: - 小工具

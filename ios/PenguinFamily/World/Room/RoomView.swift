@@ -29,6 +29,8 @@ struct RoomView: View {
     var onTap: (PenguinID) -> Void = { _ in }
     /// 哪一隻的動作播完了。
     var onMotionFinished: (PenguinID) -> Void = { _ in }
+    /// 哪一隻走到了哪一格。
+    var onArrived: (RoomStage.Arrival) -> Void = { _ in }
 
     /// 第一次出現前是 nil。
     @State private var stage: RoomStage?
@@ -37,18 +39,20 @@ struct RoomView: View {
     /// 只記下參數，不建舞台（見上面的說明）。
     init(room: RoomLayout, cast: [RoomStage.CastMember], penguins: [Penguin],
          onTap: @escaping (PenguinID) -> Void = { _ in },
-         onMotionFinished: @escaping (PenguinID) -> Void = { _ in }) {
+         onMotionFinished: @escaping (PenguinID) -> Void = { _ in },
+         onArrived: @escaping (RoomStage.Arrival) -> Void = { _ in }) {
         self.room = room
         self.cast = cast
         self.penguins = penguins
         self.onTap = onTap
         self.onMotionFinished = onMotionFinished
+        self.onArrived = onArrived
     }
 
     var body: some View {
         GeometryReader { proxy in
             if let stage {
-                MetalRoomView(stage: stage, onMotionFinished: onMotionFinished)
+                MetalRoomView(stage: stage, onMotionFinished: onMotionFinished, onArrived: onArrived)
                     .gesture(tapGesture(stage))
                     .simultaneousGesture(panGesture(stage))
                     .simultaneousGesture(pinchGesture(stage))
@@ -77,6 +81,7 @@ struct RoomView: View {
     }
 
     /// 讓舞台和清單一致：不在清單裡的下台、新的上台，再更新每一隻的位置與意圖。
+    /// 正在走的企鵝位置由舞台決定，這裡給的位置不會蓋過去；走到後外面會改成終點，兩邊就一致了。
     static func sync(_ penguins: [Penguin], on stage: RoomStage) {
         let now = CACurrentMediaTime()
         let ids = Set(penguins.map(\.id))
