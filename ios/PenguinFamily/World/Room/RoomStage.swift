@@ -96,8 +96,12 @@ final class RoomStage {
     private var lastUpdate: Double?
     private var needsDraw = true
 
-    /// 建立時台上沒有企鵝；用 `add` 讓後台名單裡的企鵝上台。
+    /// 到目前為止建過幾個舞台。測試用：確認 `RoomView` 被重新建立時不會跟著重建舞台（2026-11-18 修過）。
+    private(set) static var createdCount = 0
+
+    /// 建立時台上沒有企鵝；用 `add` 讓後台名單裡的企鵝上台。要畫整個房間，不便宜，一個畫面只建一次。
     init(room: RoomLayout, cast: [CastMember]) {
+        Self.createdCount += 1
         self.room = room
         self.cast = cast
         let iso = IsoProjection(room: room)

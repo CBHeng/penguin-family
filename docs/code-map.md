@@ -60,7 +60,7 @@ App 分三層，像 Vue 的「props 往下、events 往上」：
 | [RoomCamera.swift](../ios/PenguinFamily/World/Room/RoomCamera.swift) | 鏡頭的數學：畫面中央對著哪一點、不超出房間、慢慢靠近目標、對齊螢幕像素。 |
 | [RoomZoom.swift](../ios/PenguinFamily/World/Room/RoomZoom.swift) | 縮放的數學：最大 3pt、最小房間左右塞滿畫面、放開後吸附、手指下那一點不動。 |
 | [RoomStage.swift](../ios/PenguinFamily/World/Room/RoomStage.swift) | 箱庭的即時狀態：後台名單與台上的企鵝（`add`、`remove`）、鏡頭、縮放、每隻的位置與動作；每一格要畫哪些圖、點到哪一隻、要不要重畫、閒置後鏡頭回到中點。純邏輯。 |
-| [RoomView.swift](../ios/PenguinFamily/World/Room/RoomView.swift) | 放上 Metal 畫面，把點擊、拖曳、捏合、意圖與「誰在台上」交給 `RoomStage`。 |
+| [RoomView.swift](../ios/PenguinFamily/World/Room/RoomView.swift) | 放上 Metal 畫面，把點擊、拖曳、捏合、意圖與「誰在台上」交給 `RoomStage`；舞台在第一次出現時才建，之後沿用。 |
 
 **`World/Render/`：用 Metal 畫出來**
 
@@ -100,7 +100,7 @@ App 分三層，像 Vue 的「props 往下、events 往上」：
 | [RoomTests.swift](../ios/PenguinFamilyTests/RoomTests.swift) | 房間擺放檢查、等角換算、背景與家具的畫法、前後順序。 |
 | [RoomCameraTests.swift](../ios/PenguinFamilyTests/RoomCameraTests.swift) | 鏡頭範圍、對齊像素、慢慢靠近。 |
 | [RoomZoomTests.swift](../ios/PenguinFamilyTests/RoomZoomTests.swift) | 縮放範圍、吸附、手指下那一點不動。 |
-| [RoomStageTests.swift](../ios/PenguinFamilyTests/RoomStageTests.swift) | 要畫什麼與順序、點到哪一隻（重疊時前面優先）、拖曳、捏合、各自的動作、閒置後鏡頭回去、有變化才重畫、上台與下台、一開始只有第一隻在台上。 |
+| [RoomStageTests.swift](../ios/PenguinFamilyTests/RoomStageTests.swift) | 要畫什麼與順序、點到哪一隻（重疊時前面優先）、拖曳、捏合、各自的動作、閒置後鏡頭回去、有變化才重畫、上台與下台、一開始只有第一隻在台上、重新建立 `RoomView` 不會重建舞台。 |
 | [CodeMapTests.swift](../ios/PenguinFamilyTests/CodeMapTests.swift) | 這份文件和實際檔案一致。 |
 
 Metal 實際畫出來的樣子與手感不在單元測試裡，用模擬器截圖與實機確認。
@@ -181,7 +181,7 @@ sequenceDiagram
     Lib-->>CV: 每一隻的角色，缺的是灰色剪影
     CV->>GV: 淡入主遊戲
     GV->>RV: 房間、後台名單（一家每一隻）、台上的企鵝（位置、意圖）
-    Note over RV: 建立 RoomStage、讓台上的企鵝上台；Metal 畫面出現時把後台每一隻的圖送進 GPU
+    Note over RV: 第一次出現時建立 RoomStage（之後沿用）、讓台上的企鵝上台；Metal 畫面出現時把後台每一隻的圖送進 GPU
     RV->>RV: 鏡頭對準企鵝，每個像素 3pt
 ```
 

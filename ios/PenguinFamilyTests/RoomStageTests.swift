@@ -257,6 +257,25 @@ struct RoomStageTests {
         #expect(stage.onStage == [Self.ids[1]])
     }
 
+    // MARK: - 舞台只建一次（2026-11-18）
+
+    @Test func recreatingRoomViewDoesNotBuildAStage() {
+        // SwiftUI 每次重算上一層的 body 都會重新建立 RoomView；舞台等第一次出現才建，不能跟著重建
+        let before = RoomStage.createdCount
+        for _ in 0..<3 {
+            _ = RoomView(room: .indoor, cast: Self.ids.map { .init(id: $0, frames: nil) },
+                         penguins: [.init(id: Self.ids[0], position: Self.positions[0], intent: .idle)])
+        }
+        #expect(RoomStage.createdCount == before)
+    }
+
+    @Test func makeStagePutsTheStartingPenguinsOnStage() {
+        let stage = RoomView.makeStage(room: .indoor, cast: Self.ids.map { .init(id: $0, frames: nil) },
+                                       penguins: [.init(id: Self.ids[0], position: Self.positions[0], intent: .idle)])
+        #expect(stage.onStage == [Self.ids[0]])
+        #expect(stage.feet(of: Self.ids[0]) == PixelPoint(x: 192, y: 136))
+    }
+
     // MARK: - 一家
 
     @Test func eventLogNamesEachPenguin() {
