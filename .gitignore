@@ -7,6 +7,8 @@ build/
 xcuserdata/
 *.xcuserstate
 *.xcscmblueprint
+# Xcode 編輯 scheme 時建的共用 scheme（例如 Run 改用 Release）：是個人偏好，不進 repo（作者 2026-11-18 決定）
+**/xcshareddata/xcschemes/
 
 # Swift Package Manager
 .build/
