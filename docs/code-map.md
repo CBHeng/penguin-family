@@ -42,11 +42,13 @@ App 分三層，像 Vue 的「props 往下、events 往上」：
 
 | 檔案 | 職責 |
 |---|---|
-| [CharacterRig.swift](../ios/PenguinFamily/World/Pixel/CharacterRig.swift) | `rig.json` 的資料格式（調色盤、部件、轉軸、定稿正面圖）。 |
-| [RigCompositor.swift](../ios/PenguinFamily/World/Pixel/RigCompositor.swift) | 部件合成：給一個姿勢（頭、手幾度、身體壓扁多少），拼出原始尺寸的一格小圖。照私有素材 repo 的 Python 規格，逐格相同。 |
+| [CharacterRig.swift](../ios/PenguinFamily/World/Pixel/CharacterRig.swift) | `rig.json` 的資料格式（調色盤、部件、轉軸、定稿正面圖；斜向四個方向的部件與走法）。 |
+| [RigCompositor.swift](../ios/PenguinFamily/World/Pixel/RigCompositor.swift) | 正面的部件合成：給一個姿勢（頭、手幾度、身體壓扁多少），拼出原始尺寸的一格小圖。照私有素材 repo 的 Python 規格，逐格相同。 |
+| [ObliqueCompositor.swift](../ios/PenguinFamily/World/Pixel/ObliqueCompositor.swift) | 斜向的部件合成：全部整格平移（傾斜、下沉、張手、抬腳），右邊方向由左邊翻轉、帽子畫在頭後面。照 Python 規格，逐格相同。 |
+| [Gait.swift](../ios/PenguinFamily/World/Pixel/Gait.swift) | 面向（正面與斜向四個方向）、步態（慢走、小跑）的數字，以及第幾格是什麼姿勢。 |
 | [Motion.swift](../ios/PenguinFamily/World/Pixel/Motion.swift) | 動作的通用格式：每秒幾格、共幾格、第幾格的姿勢；`Motion.all` 列出 App 會用到的所有動作。 |
 | [HelloMotion.swift](../ios/PenguinFamily/World/Pixel/HelloMotion.swift) | 哈囉的時間軸：第幾格時頭、手各轉幾度。 |
-| [CharacterFrames.swift](../ios/PenguinFamily/World/Pixel/CharacterFrames.swift) | 一隻角色預先算好的圖：站好一張，加上每個動作的每一格。載入角色時全部算好，播放時只取出來貼。 |
+| [CharacterFrames.swift](../ios/PenguinFamily/World/Pixel/CharacterFrames.swift) | 一隻角色預先算好的圖：正面站好一張與每個動作的每一格，加上斜向四個方向的站姿與慢走、小跑的每一格。載入角色時全部算好，播放時只取出來貼。 |
 | [PixelGrid.swift](../ios/PenguinFamily/World/Pixel/PixelGrid.swift) | 像素格子：每格放一個調色盤代碼或透明。 |
 | [PixelBitmap.swift](../ios/PenguinFamily/World/Pixel/PixelBitmap.swift) | 原始尺寸的 RGBA 位元組；直接送進 GPU 當貼圖，顏色不經過轉換。 |
 | [PlaceholderSilhouette.swift](../ios/PenguinFamily/World/Pixel/PlaceholderSilhouette.swift) | 沒有角色包時的灰色占位剪影。 |
@@ -92,7 +94,8 @@ App 分三層，像 Vue 的「props 往下、events 往上」：
 | 檔案 | 測什麼 |
 |---|---|
 | [RigCompositorTests.swift](../ios/PenguinFamilyTests/RigCompositorTests.swift) | 合成規則，用手寫的 10×10 假角色，永遠會跑。 |
-| [CharacterPackParityTests.swift](../ios/PenguinFamilyTests/CharacterPackParityTests.swift) | 和 Python 逐格相同；沒有角色包時自動跳過。 |
+| [CharacterPackParityTests.swift](../ios/PenguinFamilyTests/CharacterPackParityTests.swift) | 和 Python 逐格相同（哈囉；慢走、小跑在四個方向的姿勢與畫面）；沒有角色包時自動跳過。 |
+| [ObliqueCompositorTests.swift](../ios/PenguinFamilyTests/ObliqueCompositorTests.swift) | 斜向合成規則（傾斜、下沉、腳、張手、翻轉與帽子）與步態，用手寫的假角色，永遠會跑。 |
 | [PenguinDisplayTests.swift](../ios/PenguinFamilyTests/PenguinDisplayTests.swift) | 哈囉時間軸、顏色轉換、找角色包、載入一家。 |
 | [CharacterFramesTests.swift](../ios/PenguinFamilyTests/CharacterFramesTests.swift) | 預先算好的每一格和當場合成逐像素相同、超出範圍顯示站好、記憶體估算。 |
 | [PenguinBehaviorTests.swift](../ios/PenguinFamilyTests/PenguinBehaviorTests.swift) | 狀態機的轉換。 |
@@ -139,6 +142,10 @@ flowchart TD
         RoomRenderer --> Layout
         RoomRenderer --> Grid["PixelGrid"]
         Frames --> Compositor
+        Frames --> Oblique["ObliqueCompositor"]
+        Frames --> Gait["Gait"]
+        Oblique --> Gait
+        Oblique --> Rig
         Frames --> Motion
         Frames --> Bitmap["PixelBitmap"]
         Placeholder --> Bitmap
