@@ -141,7 +141,7 @@ final class RoomStage {
     private var lastUpdate: Double?
     private var needsDraw = true
 
-    /// 到目前為止建過幾個舞台。測試用：確認 `RoomView` 被重新建立時不會跟著重建舞台（2026-11-18 修過）。
+    /// 到目前為止建過幾個舞台。測試用：確認 `RoomView` 被重新建立時不會跟著重建舞台。
     private(set) static var createdCount = 0
 
     /// 建立時台上沒有企鵝；用 `add` 讓後台名單裡的企鵝上台。一個畫面只建一次。
@@ -361,7 +361,7 @@ final class RoomStage {
                 penguins[index].standUntil = nil
                 tick.motionFinished.append(penguins[index].id)
             }
-            // 正面的動作：每一格照第幾秒的姿勢轉動部件，不等下一張動畫格
+            // 正面的動作：每一格照第幾秒的姿勢轉動部件
             let pose = penguins[index].playing.map { $0.motion.poseAt(now - $0.start) } ?? .rest
             if pose != penguins[index].pose {
                 penguins[index].pose = pose

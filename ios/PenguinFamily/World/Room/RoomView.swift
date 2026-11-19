@@ -11,7 +11,7 @@ import SwiftUI
 ///
 /// 舞台只建一次：第一次出現時才建，之後一直沿用（作者 2026-11-18 決定）。不在 `init` 裡建：
 /// 上一層的 `body` 每次重算都會重新呼叫 `init`，`State(initialValue:)` 的參數會真的算出來再被丟掉；
-/// 建一次舞台要畫整個房間（模擬器最佳化約 2.8 毫秒、Debug 約 107 毫秒），以前每點一下就在主執行緒白做兩次。
+/// 建一次舞台要畫整個房間（模擬器最佳化約 2.8 毫秒、Debug 約 107 毫秒），放在 `init` 會在主執行緒白做。
 struct RoomView: View {
     /// 台上一隻企鵝要給畫面的資料：身分、站的位置、現在的意圖與它的編號（`PenguinBehavior.serial`）。
     struct Penguin: Equatable {

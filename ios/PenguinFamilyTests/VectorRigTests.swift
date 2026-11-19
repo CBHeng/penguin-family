@@ -199,7 +199,7 @@ struct VectorRigTests {
             #expect(abs(last.dip - Double(gait.dip)) < 1e-12)                    // 換腳落地時最低
             for k in 1...1000 {
                 let pose = gait.vectorPose(at: gait.cycle * Double(k) / 1000, walk: walk)
-                // 不再整格跳：相鄰兩個時間點只差一點點
+                // 不整格跳：相鄰兩個時間點只差一點點
                 #expect(abs(pose.swayDegrees - last.swayDegrees) < 0.1 && abs(pose.dip - last.dip) < 0.05)
                 for (name, o) in pose.feet {
                     let p = try #require(last.feet[name])

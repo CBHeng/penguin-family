@@ -4,7 +4,7 @@ import SwiftUI
 ///
 /// 暫時的樣子，不放企鵝、不放台詞（台詞只能由作者寫）；之後可以換成正式的圖。
 struct LoadingView: View {
-    /// 方塊邊長（pt），和箱庭最大時的一個單位一樣大。
+    /// 方塊邊長（pt）：箱庭最大倍率（每單位 3pt）時的 3 個單位。
     private static let dot: CGFloat = 3 * 3
     /// 每隔多久換下一個方塊亮（秒）。
     private static let step = 0.3
