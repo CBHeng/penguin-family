@@ -23,10 +23,10 @@ nonisolated struct TilePosition: Equatable, Hashable, Sendable {
     var j: Double
 }
 
-/// 畫面上的一點（單位：像素，箱庭圖的左上角是原點）。
-nonisolated struct PixelPoint: Equatable, Hashable, Sendable {
-    var x: Int
-    var y: Int
+/// 箱庭上的一點（單位，可以有小數；箱庭左上角是原點，y 往下）。一個單位等於原本像素版的一格（ADR 0007）。
+nonisolated struct ScenePoint: Equatable, Hashable, Sendable {
+    var x: Double
+    var y: Double
 }
 
 nonisolated enum FurnitureKind: String, Sendable, CaseIterable {
@@ -41,7 +41,7 @@ nonisolated struct Furniture: Equatable, Sendable {
     let kind: FurnitureKind
     /// 佔用的地板格子。
     let footprint: TileRect
-    /// 高度（像素）。
+    /// 高度（單位）。
     let height: Int
 }
 
@@ -58,7 +58,7 @@ nonisolated struct WallItem: Equatable, Sendable {
     /// 沿著牆從第幾格開始、佔幾格。
     let start: Int
     let length: Int
-    /// 離地多高到多高（像素）。
+    /// 離地多高到多高（單位）。
     let bottom: Int
     let top: Int
 }
@@ -68,7 +68,7 @@ nonisolated struct RoomLayout: Equatable, Sendable {
     /// i 軸、j 軸各幾格。
     let widthTiles: Int
     let depthTiles: Int
-    /// 後牆高度（像素）。
+    /// 後牆高度（單位）。
     let wallHeight: Int
     let furniture: [Furniture]
     let wallItems: [WallItem]
@@ -111,14 +111,14 @@ nonisolated struct RoomLayout: Equatable, Sendable {
     }
 }
 
-/// 等角投影：地板格子 (i, j) 與高度 z 換算成畫面像素。每格 32×16 像素，像素線條是 2:1 的斜率。
+/// 等角投影：地板格子 (i, j) 與高度 z 換算成箱庭上的位置（單位）。每格 32×16 單位，格線是 2:1 的斜率。
 nonisolated struct IsoProjection: Sendable {
     static let tileWidth = 32
     static let tileHeight = 16
 
     let room: RoomLayout
 
-    /// 整個箱庭圖的大小（像素）：菱形地板加上方的牆。
+    /// 整個箱庭的大小（單位）：菱形地板加上方的牆。
     var canvasWidth: Int { (room.widthTiles + room.depthTiles) * Self.tileWidth / 2 }
     var canvasHeight: Int { (room.widthTiles + room.depthTiles) * Self.tileHeight / 2 + room.wallHeight }
 
@@ -129,9 +129,9 @@ nonisolated struct IsoProjection: Sendable {
         return (x, y)
     }
 
-    /// 站在地板某一點時，腳底在畫面上的像素。
-    func feet(at position: TilePosition) -> PixelPoint {
+    /// 站在地板某一點時，腳底在箱庭上的位置。不取整數，走路才會平滑（ADR 0007）。
+    func feet(at position: TilePosition) -> ScenePoint {
         let p = screen(position.i, position.j)
-        return PixelPoint(x: Int(p.x.rounded(.down)), y: Int(p.y.rounded(.down)))
+        return ScenePoint(x: p.x, y: p.y)
     }
 }

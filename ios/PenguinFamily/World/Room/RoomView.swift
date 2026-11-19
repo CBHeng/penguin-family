@@ -131,7 +131,7 @@ struct RoomView: View {
 
 #Preview("沒有角色包") {
     let ids = [PenguinID("placeholder-1"), PenguinID("placeholder-2")]
-    RoomView(room: .indoor, cast: ids.map { .init(id: $0, frames: nil) }, penguins: [
+    RoomView(room: .indoor, cast: ids.map { .init(id: $0) }, penguins: [
         .init(id: ids[0], position: TilePosition(i: 4.5, j: 4.5), intent: .idle),
         .init(id: ids[1], position: TilePosition(i: 5.5, j: 3.5), intent: .idle),
     ])

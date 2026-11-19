@@ -10,31 +10,30 @@ import Foundation
 /// 企鵝分「後台」與「台上」（作者 2026-11-17 決定）：建立時給後台名單（可能上台的每一隻與造型），
 /// 牠們的圖在載入時一次送進 GPU；之後用 `add`、`remove` 決定誰在台上，只有台上的會畫、點得到、鏡頭會看。
 /// 企鵝用 `PenguinID` 區分，不用編號。
+///
+/// 走平面向量（ADR 0007）：位置不取整數、走路每一格都前進；企鵝的正面與斜向都照當下的姿勢轉動部件。
+/// 沒有角色包的位置用灰色剪影，它也是向量，只有正面。
 final class RoomStage {
     /// 沒碰多久後鏡頭開始回到企鵝身邊（秒）。實機上調。
     static let idleSecondsBeforeReturn: Double = 5
     /// 回去時，以每秒 60 格計，每格走剩下距離的多少；更新率不同時換算成相同的速度。實機上調。
     static let returnStepPer60Hz: Double = 0.08
 
-    /// 後台名單的一隻：身分與造型（nil 表示用灰色剪影）。
+    /// 後台名單的一隻：身分與造型。
     struct CastMember {
         let id: PenguinID
-        let frames: CharacterFrames?
+        /// 向量造型（ADR 0007）；nil 用灰色剪影（`VectorRig.placeholder`）。
+        var vector: VectorRig? = nil
     }
 
-    /// 要畫的一張圖是哪一張。企鵝的圖以身分區分，因為兩隻的造型不同。
+    /// 要畫的東西是哪一個。企鵝以身分區分，因為兩隻的造型不同。
     enum SpriteKey: Hashable, Sendable {
+        /// 牆、地板與掛在牆上的東西（多邊形）。
         case background
+        /// 地上的第幾件家具（多邊形）。
         case furniture(Int)
-        /// 正面站好。
-        case penguinRest(PenguinID)
-        /// 正面動作（哈囉）的第幾格。
-        case penguinFrame(PenguinID, motion: String, frame: Int)
-        /// 斜向站著（走到後維持走的方向）。
-        case penguinStanding(PenguinID, Facing)
-        /// 斜向走路：哪個步態、哪個方向、一個循環的第幾格。
-        case penguinGait(PenguinID, gait: String, facing: Facing, frame: Int)
-        case placeholder
+        /// 企鵝：照 `Sprite.pose` 的方向與姿勢轉動部件。
+        case penguin(PenguinID)
     }
 
     /// 某隻企鵝走到了哪一格（到不了時是原地那一格）。
@@ -43,20 +42,23 @@ final class RoomStage {
         let tile: Tile
     }
 
-    /// 要畫的一張圖：放在箱庭圖上的哪裡（像素）。
+    /// 要畫的一樣東西：蓋住箱庭上的哪個範圍（單位，可以有小數）。
+    /// 企鵝是角色畫布放在這裡、照 `pose` 轉動部件；多邊形本身就帶位置，範圍只是外接矩形。
     struct Sprite: Equatable, Sendable {
         let key: SpriteKey
-        let x: Int
-        let y: Int
-        let width: Int
-        let height: Int
+        let x: Double
+        let y: Double
+        let width: Double
+        let height: Double
+        /// 企鵝這一格的方向與姿勢；其他是 nil。
+        var pose: VectorPose? = nil
     }
 
-    /// 箱庭圖怎麼對到畫面：畫面左上角對著箱庭的哪一點（像素，已對齊螢幕實體像素），每個像素幾 pt。
+    /// 箱庭怎麼對到畫面：畫面左上角對著箱庭的哪一點（單位，可以有小數），每個單位幾 pt。
     struct ViewTransform: Equatable, Sendable {
         let topLeftX: Double
         let topLeftY: Double
-        let pointsPerPixel: Double
+        let pointsPerUnit: Double
     }
 
     /// 每一格更新後，遊戲迴圈要做什麼。
@@ -76,15 +78,16 @@ final class RoomStage {
     /// 台上一隻企鵝現在的樣子。
     private struct Penguin {
         let id: PenguinID
-        let frames: CharacterFrames?
+        let vector: VectorRig
         /// 站在地板的哪一點；走路時一直變。
         var position: TilePosition
-        var feet: PixelPoint
+        var feet: ScenePoint
         /// 面向哪裡：一開始面向鏡頭；走路時是這一段的方向，走到後維持；哈囉時轉回正面。
         var facing: Facing = .front
         var intent: PenguinBehavior.Intent?
         var playing: (motion: Motion, start: Double)?
-        var currentFrame: Int?
+        /// 正面現在的姿勢（斜向的姿勢由走路算）。
+        var pose: RigPose = .rest
         var walking: Walk?
     }
 
@@ -93,8 +96,8 @@ final class RoomStage {
         let path: RoomPath
         let gait: Gait
         let start: Double
-        /// 走到第幾格動畫了（每秒 12 格）；位置也只在換格時前進，和看過的 GIF 一樣。
-        var frame = 0
+        /// 走了幾秒：步態每一格照這個算姿勢，位置也每一格都前進（ADR 0007）。
+        var elapsed = 0.0
     }
 
     let room: RoomLayout
@@ -103,7 +106,7 @@ final class RoomStage {
 
     private let iso: IsoProjection
     private let furnitureSprites: [(sprite: Sprite, depth: Int)]
-    private let roomBitmaps: [SpriteKey: PixelBitmap]
+    private let roomPolygons: [SpriteKey: [ColoredPolygon]]
     /// 後台名單，依給的順序。
     private let cast: [CastMember]
     /// 台上的企鵝，依上台先後；深度相同時後上台的畫在前面。
@@ -111,8 +114,8 @@ final class RoomStage {
     /// 畫面大小（pt）與 1pt 幾個實體像素。還沒量到畫面大小前是 0。
     private(set) var viewport = CGSize.zero
     private(set) var displayScale = 1.0
-    /// 每個箱庭像素畫成幾 pt。
-    private(set) var zoom = RoomZoom.maxPointsPerPixel
+    /// 每個單位畫成幾 pt。
+    private(set) var zoom = RoomZoom.maxPointsPerUnit
     private(set) var camera: RoomCamera?
 
     /// 這次拖曳上一次的手指移動量；不在拖曳時是 nil。
@@ -127,31 +130,31 @@ final class RoomStage {
     /// 到目前為止建過幾個舞台。測試用：確認 `RoomView` 被重新建立時不會跟著重建舞台（2026-11-18 修過）。
     private(set) static var createdCount = 0
 
-    /// 建立時台上沒有企鵝；用 `add` 讓後台名單裡的企鵝上台。要畫整個房間，不便宜，一個畫面只建一次。
+    /// 建立時台上沒有企鵝；用 `add` 讓後台名單裡的企鵝上台。一個畫面只建一次。
     init(room: RoomLayout, cast: [CastMember]) {
         Self.createdCount += 1
         self.room = room
         self.cast = cast
         let iso = IsoProjection(room: room)
         self.iso = iso
-        var bitmaps: [SpriteKey: PixelBitmap] = [.background: PixelBitmap(RoomRenderer.background(room),
-                                                                          colors: RoomRenderer.colors)]
+        var polygons: [SpriteKey: [ColoredPolygon]] = [.background: RoomRenderer.background(room)]
         var sprites: [(Sprite, Int)] = []
         for (i, item) in room.furniture.enumerated() {
-            let (grid, origin) = RoomRenderer.sprite(for: item, in: room)
-            bitmaps[.furniture(i)] = PixelBitmap(grid, colors: RoomRenderer.colors)
-            sprites.append((Sprite(key: .furniture(i), x: origin.x, y: origin.y, width: grid.width, height: grid.height),
+            let shape = RoomRenderer.furniture(item, in: room)
+            let b = RoomRenderer.bounds(shape)
+            polygons[.furniture(i)] = shape
+            sprites.append((Sprite(key: .furniture(i), x: b.minX, y: b.minY, width: b.maxX - b.minX, height: b.maxY - b.minY),
                             RoomRenderer.depth(of: item, in: room)))
         }
-        roomBitmaps = bitmaps
+        roomPolygons = polygons
         furnitureSprites = sprites
     }
 
     /// 台上有誰，依上台先後。
     var onStage: [PenguinID] { penguins.map(\.id) }
 
-    /// 台上某隻企鵝的腳底在箱庭圖上的位置（像素）；不在台上是 nil。
-    func feet(of id: PenguinID) -> PixelPoint? { penguins.first { $0.id == id }?.feet }
+    /// 台上某隻企鵝的腳底在箱庭上的位置；不在台上是 nil。
+    func feet(of id: PenguinID) -> ScenePoint? { penguins.first { $0.id == id }?.feet }
 
     /// 台上某隻企鵝站在地板的哪一點；不在台上是 nil。
     func position(of id: PenguinID) -> TilePosition? { penguins.first { $0.id == id }?.position }
@@ -159,12 +162,16 @@ final class RoomStage {
     /// 台上某隻企鵝面向哪裡；不在台上是 nil。
     func facing(of id: PenguinID) -> Facing? { penguins.first { $0.id == id }?.facing }
 
+    /// 台上某隻企鵝這一格的方向與姿勢；不在台上是 nil。
+    func pose(of id: PenguinID) -> VectorPose? { penguins.first { $0.id == id }.map(Self.pose(of:)) }
+
     // MARK: - 上台、下台
 
     /// 讓後台名單裡的一隻站到 `position` 上台。不在名單裡、或已經在台上時不做事。
     func add(_ id: PenguinID, at position: TilePosition) {
         guard !penguins.contains(where: { $0.id == id }), let member = cast.first(where: { $0.id == id }) else { return }
-        penguins.append(Penguin(id: id, frames: member.frames, position: position, feet: iso.feet(at: position)))
+        penguins.append(Penguin(id: id, vector: member.vector ?? .placeholder, position: position,
+                                feet: iso.feet(at: position)))
         changed()
     }
 
@@ -175,37 +182,14 @@ final class RoomStage {
         changed()
     }
 
-    // MARK: - 貼圖
+    // MARK: - 繪圖層載入時要的東西
 
-    /// 所有可能用到的圖，包含後台還沒上台的企鵝；繪圖層載入時一次全部送進 GPU（用首次載入換順暢），
-    /// 之後上台不用再載入。
-    func allBitmaps() -> [SpriteKey: PixelBitmap] {
-        var all = roomBitmaps
-        for member in cast {
-            guard let frames = member.frames else {
-                all[.placeholder] = PlaceholderSilhouette.bitmap
-                continue
-            }
-            all[.penguinRest(member.id)] = frames.rest
-            for motion in Motion.all {
-                for frame in 0..<frames.frameCount(of: motion) {
-                    all[.penguinFrame(member.id, motion: motion.name, frame: frame)] = frames.image(motion, frame: frame)
-                }
-            }
-            guard let oblique = frames.oblique else { continue }
-            for (facing, image) in oblique.standing {
-                all[.penguinStanding(member.id, facing)] = image
-            }
-            for gait in Gait.all {
-                for facing in Facing.oblique {
-                    for frame in 0..<oblique.frameCount(gait, facing) {
-                        all[.penguinGait(member.id, gait: gait.name, facing: facing, frame: frame)] =
-                            oblique.image(gait, facing, frame: frame)
-                    }
-                }
-            }
-        }
-        return all
+    /// 箱庭的多邊形：背景與每件家具。繪圖層載入時一次切成三角形送進 GPU。
+    func polygons() -> [SpriteKey: [ColoredPolygon]] { roomPolygons }
+
+    /// 後台名單的每一隻的造型（沒有角色包的是灰色剪影），包含還沒上台的；繪圖層載入時一次把部件畫成貼圖。
+    func rigs() -> [PenguinID: VectorRig] {
+        Dictionary(uniqueKeysWithValues: cast.map { ($0.id, $0.vector ?? .placeholder) })
     }
 
     // MARK: - 外面告訴我們的事
@@ -217,7 +201,7 @@ final class RoomStage {
         viewport = size
         displayScale = scale
         let limits = zoomLimits()
-        zoom = first ? limits.clamped(zoom) : limits.snapped(zoom)
+        zoom = limits.clamped(zoom)
         let center = camera.map { (x: $0.centerX, y: $0.centerY) } ?? focus
         camera = makeCamera(center: center)
         changed()
@@ -273,17 +257,17 @@ final class RoomStage {
 
     // MARK: - 手勢（座標是畫面上的 pt，左上角為原點）
 
-    /// 這一點點到台上哪一隻企鵝；沒點到是 nil。觸控範圍是整張企鵝圖，比企鵝本身大一圈。
+    /// 這一點點到台上哪一隻企鵝；沒點到是 nil。觸控範圍是整張企鵝圖（角色畫布），比企鵝本身大一圈。
     /// 兩隻重疊時，畫在前面（離主人近）的那隻優先。
     func penguin(at point: CGPoint) -> PenguinID? {
         guard let transform = viewTransform else { return nil }
-        let x = transform.topLeftX + point.x / transform.pointsPerPixel
-        let y = transform.topLeftY + point.y / transform.pointsPerPixel
+        let x = transform.topLeftX + point.x / transform.pointsPerUnit
+        let y = transform.topLeftY + point.y / transform.pointsPerUnit
         // 和 `sprites()` 的順序相反：深度大的先；深度相同時，後上台的畫在後面，也就是在前面
         let frontFirst = penguins.indices.sorted { (penguins[$0].feet.y, $0) > (penguins[$1].feet.y, $1) }
         return frontFirst.first { index in
             let p = sprite(of: index)
-            return x >= Double(p.x) && x < Double(p.x + p.width) && y >= Double(p.y) && y < Double(p.y + p.height)
+            return x >= p.x && x < p.x + p.width && y >= p.y && y < p.y + p.height
         }.map { penguins[$0].id }
     }
 
@@ -323,10 +307,10 @@ final class RoomStage {
         apply(zoom: zoomLimits().clamped(start.zoom * magnification), from: start, anchor: anchor)
     }
 
-    /// 放開：吸附到整數個實體像素。
+    /// 放開：停在放開時的倍率（向量任何倍率都清楚，不用吸附）。
     func pinchEnded(magnification: Double, anchor: CGPoint, now: Double) {
         if let start = pinchStart {
-            apply(zoom: zoomLimits().snapped(start.zoom * magnification), from: start, anchor: anchor)
+            apply(zoom: zoomLimits().clamped(start.zoom * magnification), from: start, anchor: anchor)
         }
         pinchStart = nil
         lastTouch = now
@@ -335,7 +319,7 @@ final class RoomStage {
 
     // MARK: - 每一格
 
-    /// 遊戲迴圈每一格呼叫：推進每隻的動作、閒置後把鏡頭移回企鵝身邊，回報要不要重畫、要不要繼續跑。
+    /// 遊戲迴圈每一格呼叫：推進每隻的動作與走路、閒置後把鏡頭移回企鵝身邊，回報要不要重畫、要不要繼續跑。
     func update(now: Double) -> Tick {
         var tick = Tick()
         let elapsed = lastUpdate.map { min(max(now - $0, 0), 0.1) } ?? (1.0 / 60)
@@ -346,9 +330,10 @@ final class RoomStage {
                 penguins[index].playing = nil
                 tick.motionFinished.append(penguins[index].id)
             }
-            let frame = penguins[index].playing.map { Int(((now - $0.start) * $0.motion.framesPerSecond).rounded(.down)) }
-            if frame != penguins[index].currentFrame {
-                penguins[index].currentFrame = frame
+            // 正面的動作：每一格照第幾秒的姿勢轉動部件，不等下一張動畫格
+            let pose = penguins[index].playing.map { $0.motion.poseAt(now - $0.start) } ?? .rest
+            if pose != penguins[index].pose {
+                penguins[index].pose = pose
                 needsDraw = true
             }
             if let arrival = advanceWalk(index, now: now) { tick.arrived.append(arrival) }
@@ -392,19 +377,19 @@ final class RoomStage {
     /// 畫面左上角對著箱庭哪一點；還沒量到畫面大小前是 nil。
     var viewTransform: ViewTransform? {
         guard let camera else { return nil }
-        let topLeft = camera.topLeft(step: 1 / (zoom * displayScale))
-        return ViewTransform(topLeftX: topLeft.x, topLeftY: topLeft.y, pointsPerPixel: zoom)
+        let topLeft = camera.topLeft
+        return ViewTransform(topLeftX: topLeft.x, topLeftY: topLeft.y, pointsPerUnit: zoom)
     }
 
-    /// 這一格要畫的圖，由遠到近：背景先畫，越靠近主人（畫面越下方）畫在越前面。
+    /// 這一格要畫的東西，由遠到近：背景先畫，越靠近主人（畫面越下方）畫在越前面。
     ///
     /// 家具依「最靠近主人的角」排；企鵝再一隻隻插進去，先照腳底高度，再照格子關係修正（2026-11-18）：
     /// 長家具（例如佔三格的沙發）最近的角很低，只比腳底高度的話，站在它旁邊前方的企鵝會被畫到後面。
     func sprites() -> [Sprite] {
         let furniture = RoomRenderer.drawOrder(furnitureSprites.map { ($0.sprite, $0.depth) })
-        var order: [(sprite: Sprite, depth: Int, footprint: TileRect?)] = furniture.map { sprite in
+        var order: [(sprite: Sprite, depth: Double, footprint: TileRect?)] = furniture.map { sprite in
             guard case .furniture(let i) = sprite.key else { return (sprite, 0, nil) }
-            return (sprite, furnitureSprites[i].depth, room.furniture[i].footprint)
+            return (sprite, Double(furnitureSprites[i].depth), room.furniture[i].footprint)
         }
         // 企鵝之間：腳底高的先畫；一樣時後上台的畫在後面（前面）
         for index in penguins.indices.sorted(by: { (penguins[$0].feet.y, $0) < (penguins[$1].feet.y, $1) }) {
@@ -420,7 +405,8 @@ final class RoomStage {
             }
             order.insert((sprite(of: index), penguin.feet.y, nil), at: at)
         }
-        let background = Sprite(key: .background, x: 0, y: 0, width: iso.canvasWidth, height: iso.canvasHeight)
+        let background = Sprite(key: .background, x: 0, y: 0,
+                                width: Double(iso.canvasWidth), height: Double(iso.canvasHeight))
         return [background] + order.map(\.sprite)
     }
 
@@ -444,48 +430,35 @@ final class RoomStage {
 
     private func sprite(of index: Int) -> Sprite {
         let penguin = penguins[index]
-        guard let frames = penguin.frames else {
-            let a = PlaceholderSilhouette.anchor, g = PlaceholderSilhouette.grid
-            return Sprite(key: .placeholder, x: penguin.feet.x - a.x, y: penguin.feet.y - a.y,
-                          width: g.width, height: g.height)
+        let pose = Self.pose(of: penguin)
+        let canvas = penguin.vector.look(pose.facing.rawValue).flatMap { penguin.vector.facings[$0.source] } ?? penguin.vector.front
+        return Sprite(key: .penguin(penguin.id), x: penguin.feet.x - canvas.feet.x, y: penguin.feet.y - canvas.feet.y,
+                      width: canvas.canvas.width, height: canvas.canvas.height, pose: pose)
+    }
+
+    /// 企鵝這一格的樣子：斜向用步態在走了幾秒時的姿勢，站著時是站姿；正面用哈囉等動作的姿勢。
+    /// 造型沒有這個斜向時（例如灰色剪影）面向鏡頭。
+    private static func pose(of penguin: Penguin) -> VectorPose {
+        if penguin.facing != .front, let walk = penguin.vector.walk(penguin.facing.rawValue) {
+            return .oblique(penguin.facing, penguin.walking.map { $0.gait.vectorPose(at: $0.elapsed, walk: walk) } ?? .rest)
         }
-        // 斜向：走路用步態的那一格；站著用斜向站姿。角色包沒有斜向時退回正面
-        if penguin.facing != .front, let oblique = frames.oblique {
-            var key: SpriteKey?
-            if let walk = penguin.walking, oblique.frameCount(walk.gait, penguin.facing) > 0 {
-                let frame = walk.frame % oblique.frameCount(walk.gait, penguin.facing)
-                key = .penguinGait(penguin.id, gait: walk.gait.name, facing: penguin.facing, frame: frame)
-            } else if oblique.standing[penguin.facing] != nil {
-                key = .penguinStanding(penguin.id, penguin.facing)
-            }
-            if let key {
-                return Sprite(key: key, x: penguin.feet.x - oblique.anchor.x, y: penguin.feet.y - oblique.anchor.y,
-                              width: oblique.width, height: oblique.height)
-            }
-        }
-        var key = SpriteKey.penguinRest(penguin.id)
-        if let playing = penguin.playing, let frame = penguin.currentFrame, frame < frames.frameCount(of: playing.motion) {
-            key = .penguinFrame(penguin.id, motion: playing.motion.name, frame: max(0, frame))
-        }
-        return Sprite(key: key, x: penguin.feet.x - frames.anchor.x, y: penguin.feet.y - frames.anchor.y,
-                      width: frames.width, height: frames.height)
+        return .front(penguin.pose)
     }
 
     // MARK: - 走路
 
-    /// 推進一隻正在走的企鵝：位置只在換動畫格時前進（每秒 12 格），走到時回報。
+    /// 推進一隻正在走的企鵝：位置與步態每一格都照經過的時間前進（ADR 0007）；走到時回報。
     private func advanceWalk(_ index: Int, now: Double) -> Arrival? {
         guard var walk = penguins[index].walking else { return nil }
-        let frame = max(0, Int(((now - walk.start) * Gait.framesPerSecond).rounded(.down)))
-        let distance = walk.gait.tilesPerSecond * Double(frame) / Gait.framesPerSecond
+        let elapsed = max(0, now - walk.start)
+        let distance = walk.gait.tilesPerSecond * elapsed
         if distance >= Double(walk.path.steps) {
             moveAlong(index, distance: Double(walk.path.steps))
             penguins[index].walking = nil
             needsDraw = true
             return Arrival(id: penguins[index].id, tile: walk.path.goal)
         }
-        guard frame != walk.frame else { return nil }
-        walk.frame = frame
+        walk.elapsed = elapsed
         penguins[index].walking = walk
         moveAlong(index, distance: distance)
         needsDraw = true
@@ -512,17 +485,17 @@ final class RoomStage {
 
     // MARK: - 小工具
 
-    /// 鏡頭要回到哪裡：台上所有企鵝身體中央的中點（腳底上方約 16 像素）。台上沒有企鵝時是箱庭中央。
+    /// 鏡頭要回到哪裡：台上所有企鵝身體中央的中點（腳底上方約 16 單位）。台上沒有企鵝時是箱庭中央。
     private var focus: (x: Double, y: Double) {
         guard !penguins.isEmpty else { return (Double(iso.canvasWidth) / 2, Double(iso.canvasHeight) / 2) }
         let n = Double(penguins.count)
-        let x = penguins.reduce(0.0) { $0 + Double($1.feet.x) } / n
-        let y = penguins.reduce(0.0) { $0 + Double($1.feet.y - 16) } / n
+        let x = penguins.reduce(0.0) { $0 + $1.feet.x } / n
+        let y = penguins.reduce(0.0) { $0 + $1.feet.y - 16 } / n
         return (x, y)
     }
 
     private func zoomLimits() -> RoomZoom {
-        RoomZoom(viewportWidth: viewport.width, canvasWidth: Double(iso.canvasWidth), displayScale: displayScale)
+        RoomZoom(viewportWidth: viewport.width, canvasWidth: Double(iso.canvasWidth))
     }
 
     private func makeCamera(center: (x: Double, y: Double)) -> RoomCamera {

@@ -1,6 +1,24 @@
 # 素材工具與引擎調查
 
-現行做法：角色與箱庭走像素、維持原生 Swift（[ADR 0005](../adr/0005-pixel-art-swiftui.md)），繪圖用 Metal（[ADR 0006](../adr/0006-metal-rendering.md)，評估見[渲染效能](rendering-performance.md)）。這份留下仍有參考價值的調查；3D 路線（AI 生成 3D、RealityKit、紙片 2.5D、Rive、Live2D）的舊調查封存在[歷史](../history/research/3d-route.md)。
+現行做法：角色與箱庭改走平面向量（[ADR 0007](../adr/0007-flat-vector-art.md)），維持原生 Swift（[ADR 0005](../adr/0005-pixel-art-swiftui.md)），繪圖用 Metal（[ADR 0006](../adr/0006-metal-rendering.md)，評估見[渲染效能](rendering-performance.md)）。這份留下仍有參考價值的調查；3D 路線（AI 生成 3D、RealityKit、紙片 2.5D、Rive、Live2D）的舊調查封存在[歷史](../history/research/3d-route.md)。
+
+## 改走向量的技術評估（查證日期：2026-11-18）
+
+作者覺得像素版動起來像破版，問換成平面向量的技術好處與壞處。結論與決定見 [ADR 0007](../adr/0007-flat-vector-art.md)。
+
+| 發現 | 來源 | 可信度 |
+|---|---|---|
+| 像素圖不是整數倍放大時，有的像素會比別的大；常見做法是只用整數倍 | [MDN：Crisp pixel art look](https://developer.mozilla.org/en-US/docs/Games/Techniques/Crisp_pixel_art_look)、[Integer scaling](https://tanalin.com/en/articles/integer-scaling/) | 高、中 |
+| 剪紙動畫（cutout animation）：角色拆成頭、身體、手等部件，主要靠旋轉部件做動作；有父子關係與轉軸 | [Godot：Cutout animation](https://docs.godotengine.org/en/3.5/tutorials/animation/cutout_animation.html) | 高 |
+| Metal 的取樣器預設取最近的像素、不用 mipmap；線性取樣加 mipmap 要自己設定 | [Apple：Adding mipmap filtering to samplers](https://developer.apple.com/documentation/metal/adding-mipmap-filtering-to-samplers) | 高 |
+| Metal 的多重取樣抗鋸齒（MSAA）可以在 Apple GPU 的晶片暫存區直接合併，多重取樣的畫布可以不佔記憶體（memoryless） | [Apple：MSAA](https://developer.apple.com/tutorials/data/documentation/metal/improving-edge-rendering-quality-with-multisample-antialiasing-msaa.md)、[Apple：Choosing a resource storage mode for Apple GPUs](https://developer.apple.com/documentation/metal/choosing-a-resource-storage-mode-for-apple-gpus.md) | 高 |
+| Xcode 12 起資產目錄可以放 SVG（建置時處理）；沒查到公開的 API 能在執行時讀任意 SVG 檔，通常要自己畫或用第三方套件 | [sarunw：SVG image assets supported in Xcode 12](https://sarunw.com/posts/svg-image-assets-supported-in-xcode12/)、[Apple 論壇：Native SVG support](https://developer.apple.com/forums/thread/113015) | 中（查不到不等於沒有） |
+
+**對這款 App 的推估（推論，實驗時實測）**：
+
+- **記憶體**：像素版的貼圖很小，GPU 放大不另外佔記憶體。向量要照最大倍率準備貼圖，記憶體隨倍率的平方成長。iPhone 11（螢幕 2 倍）抱抱倍率 7pt：企鵝 44×45 單位約 616×630 實體像素，部件重疊與 mipmap 算進去，每個方向約 3MB，兩隻、三個方向約 20MB；螢幕 3 倍的機型約 40MB。箱庭 384×256 單位畫成一張大圖：遠景 3pt 約 14MB，抱抱 7pt 約 77MB。
+- **耗電**：平滑移動要每秒畫 60 張；現在鏡頭跟著企鵝時本來就每秒 60 張，增加的不多，需要時可以限制在 30 張。
+- **繪圖層**：混合方式已經是向量需要的「預乘 alpha」（`SpriteRenderer`），取樣器要改成線性加 mipmap；要新增每個部件的旋轉縮放，以及外框分兩次畫。
 
 工具與價格變動快，採用前要再查官網。**可信度**：高＝官方文件或套件頁；中＝官方內容的二手整理、開發者討論；低＝廠商行銷或第三方部落格。
 

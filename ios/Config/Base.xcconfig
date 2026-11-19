@@ -8,6 +8,6 @@
 
 // 版本：和 git tag 同步，只在版本分支（release/vX.Y.Z）合併時升；快速分支不動（見 CLAUDE.md 的「分支、合併與版本」）。
 // 只在這裡改；三個 target 都繼承這兩個值，不在 Xcode 的 target 設定裡另外填。
-MARKETING_VERSION = 0.0.4
+MARKETING_VERSION = 0.0.5
 // 建置號：之後上傳 TestFlight 時每次要遞增；目前固定 1。
 CURRENT_PROJECT_VERSION = 1

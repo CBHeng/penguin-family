@@ -27,7 +27,7 @@ struct MetalRoomView: UIViewRepresentable {
         (view.layer as? CAMetalLayer)?.colorspace = CGColorSpace(name: CGColorSpace.sRGB)
         context.coordinator.onMotionFinished = onMotionFinished
         context.coordinator.onArrived = onArrived
-        context.coordinator.attach(to: view)
+        context.coordinator.attach(to: view, displayScale: context.environment.displayScale)
         return view
     }
 
@@ -60,10 +60,10 @@ final class GameLoop: NSObject {
         self.stage = stage
     }
 
-    func attach(to view: MTKView) {
+    func attach(to view: MTKView, displayScale: Double) {
         self.view = view
         if let device = view.device {
-            renderer = SpriteRenderer(device: device, pixelFormat: view.colorPixelFormat, stage: stage)
+            renderer = SpriteRenderer(device: device, pixelFormat: view.colorPixelFormat, stage: stage, displayScale: displayScale)
             view.delegate = renderer
         }
         let link = CADisplayLink(target: self, selector: #selector(tick(_:)))
