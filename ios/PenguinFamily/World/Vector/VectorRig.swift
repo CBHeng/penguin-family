@@ -4,7 +4,7 @@ import Foundation
 ///
 /// 由私有素材 repo 的 `vector/export.js` 產生。形狀只有兩種：橢圓，和只有直線、三次曲線的路徑
 /// （弧線、二次曲線在匯出時就轉好了），App 這邊不用解析 SVG。
-/// 座標的單位和箱庭相同（一個單位等於原本像素版的一格），角色畫布左上角為原點，y 往下。
+/// 座標的單位和箱庭相同（企鵝約 38 單位寬，一格地板 32×16 單位），角色畫布左上角為原點，y 往下。
 nonisolated struct VectorRig: Decodable, Sendable {
     static let supportedFormat = 1
 
@@ -55,7 +55,7 @@ nonisolated struct VectorRig: Decodable, Sendable {
         let parts: [String: Part]
     }
 
-    /// 斜向怎麼走（同像素版 `walk.py` 的 Direction）：往前一個步幅單位在畫面上是 `forward` 單位、畫面左邊是哪隻腳、
+    /// 斜向怎麼走（欄位和私有素材 repo `vector.js` 讀的 `walk` 相同）：往前一個步幅單位在畫面上是 `forward` 單位、畫面左邊是哪隻腳、
     /// 近的手在身體哪側（1 右、-1 左）、哪隻腳往後踩時多往下露（每往後一個單位露幾個單位）。
     struct Walk: Decodable, Sendable {
         let forward: Point
@@ -288,8 +288,7 @@ nonisolated struct Affine2D: Equatable, Sendable {
 extension VectorRig.Facing {
     /// 正面的姿勢 → 每個部件的矩陣（沒列到的部件不動）。
     ///
-    /// 和像素版的連動相同：身體以腳底為基準壓扁（寬度用 1 / 高度）；身體變矮，頭和手跟著往下；身體變寬，手跟著往外。
-    /// 像素版的往下、往外要取整數格，這裡不取整數。
+    /// 身體以腳底為基準壓扁（寬度用 1 / 高度）；身體變矮，頭和手跟著往下；身體變寬，手跟著往外。往下、往外都不取整數。
     nonisolated func frontTransforms(_ pose: RigPose) -> [String: Affine2D] {
         var out = Dictionary(uniqueKeysWithValues: drawOrder.map { ($0, Affine2D.identity) })
         guard let body = parts["body"], let arm = parts["arm"], let head = parts["head"] else { return out }

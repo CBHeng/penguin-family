@@ -26,7 +26,7 @@
 
 ## A0：技術驗證與 App 骨架（已完成）
 
-已完成：第一隻的像素正面圖與拆部件的「哈囉」、App 骨架（角色包、部件合成與兩層測試、點一下哈囉、`Behavior` 狀態機、`Memory` 事件紀錄）。走像素、維持原生 Swift 的決定見 [ADR 0005](../adr/0005-pixel-art-swiftui.md)。
+已完成：App 骨架（角色包、點一下哈囉、`Behavior` 狀態機、`Memory` 事件紀錄）與維持原生 Swift 的決定（[ADR 0005](../adr/0005-pixel-art-swiftui.md)）。A0 的美術是像素，A1 換成平面向量（[ADR 0007](../adr/0007-flat-vector-art.md)），經過見[時間線](../history/timeline.md)。
 
 
 ## A1：可每天打開的雛型（粗估 4～6 週）

@@ -329,7 +329,7 @@ struct RoomStageTests {
     }
 
     @Test func positionMovesEveryFrame() throws {
-        // ADR 0007：位置與步態每一格都照時間前進，不等下一張動畫格
+        // ADR 0007：位置與步態每一格都照時間前進
         let stage = try Self.walkingStage()
         let id = Self.ids[0]
         stage.setIntent(.walk(to: Tile(i: 8, j: 4), pace: .walk), for: id, now: 0)
@@ -561,7 +561,7 @@ struct RoomStageTests {
         stage.setIntent(.hello, for: id, now: 10)
         #expect(stage.update(now: 10.5).draw)
         #expect(stage.pose(of: id) == .front(HelloMotion.pose(at: 10.5 - 10)))
-        let next = stage.update(now: 10.51)                                       // 不等下一張動畫格，每一格都照時間轉
+        let next = stage.update(now: 10.51)                                       // 每一格都照時間轉
         #expect(next.draw && next.keepRunning)
         #expect(Self.sprite(stage, id)?.pose == .front(HelloMotion.pose(at: 10.51 - 10)))
 

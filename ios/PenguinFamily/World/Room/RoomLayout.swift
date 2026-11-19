@@ -23,7 +23,7 @@ nonisolated struct TilePosition: Equatable, Hashable, Sendable {
     var j: Double
 }
 
-/// 箱庭上的一點（單位，可以有小數；箱庭左上角是原點，y 往下）。一個單位等於原本像素版的一格（ADR 0007）。
+/// 箱庭上的一點（單位，可以有小數；箱庭左上角是原點，y 往下）。單位是形狀資料的座標單位，一格地板 32×16 單位（ADR 0007）。
 nonisolated struct ScenePoint: Equatable, Hashable, Sendable {
     var x: Double
     var y: Double

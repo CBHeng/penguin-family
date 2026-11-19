@@ -40,7 +40,7 @@ nonisolated struct VectorWalkPose: Equatable, Sendable {
 
 /// 走路的步態：慢走與小跑。數字不分角色，兩隻企鵝共用（同哈囉的時間軸）。
 ///
-/// 數字是作者 2026-11-17 定的（當時在像素版上調）；算式和私有素材 repo `vector.js` 的 `GAITS`、`walkPose` 相同，逐格比對。
+/// 數字是作者 2026-11-17 定的；算式和私有素材 repo `vector.js` 的 `GAITS`、`walkPose` 相同，逐格比對。
 nonisolated struct Gait: Equatable, Sendable {
     /// 地板一格沿格線走是幾個步幅單位（一個單位是畫面上左右 2、上下 1 個單位；一格的邊是 16×8 單位）。
     static let unitsPerTile = 8.0
