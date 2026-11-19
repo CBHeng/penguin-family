@@ -23,10 +23,16 @@ nonisolated struct TilePosition: Equatable, Hashable, Sendable {
     var j: Double
 }
 
-/// 畫面上的一點（單位：像素，箱庭圖的左上角是原點）。
+/// 像素圖上的一點（整數格，圖的左上角是原點）。
 nonisolated struct PixelPoint: Equatable, Hashable, Sendable {
     var x: Int
     var y: Int
+}
+
+/// 箱庭上的一點（單位，可以有小數；箱庭左上角是原點，y 往下）。一個單位就是原本像素版的一格（ADR 0007）。
+nonisolated struct ScenePoint: Equatable, Hashable, Sendable {
+    var x: Double
+    var y: Double
 }
 
 nonisolated enum FurnitureKind: String, Sendable, CaseIterable {
@@ -111,14 +117,14 @@ nonisolated struct RoomLayout: Equatable, Sendable {
     }
 }
 
-/// 等角投影：地板格子 (i, j) 與高度 z 換算成畫面像素。每格 32×16 像素，像素線條是 2:1 的斜率。
+/// 等角投影：地板格子 (i, j) 與高度 z 換算成箱庭上的位置（單位）。每格 32×16 單位，格線是 2:1 的斜率。
 nonisolated struct IsoProjection: Sendable {
     static let tileWidth = 32
     static let tileHeight = 16
 
     let room: RoomLayout
 
-    /// 整個箱庭圖的大小（像素）：菱形地板加上方的牆。
+    /// 整個箱庭的大小（單位）：菱形地板加上方的牆。
     var canvasWidth: Int { (room.widthTiles + room.depthTiles) * Self.tileWidth / 2 }
     var canvasHeight: Int { (room.widthTiles + room.depthTiles) * Self.tileHeight / 2 + room.wallHeight }
 
@@ -129,9 +135,9 @@ nonisolated struct IsoProjection: Sendable {
         return (x, y)
     }
 
-    /// 站在地板某一點時，腳底在畫面上的像素。
-    func feet(at position: TilePosition) -> PixelPoint {
+    /// 站在地板某一點時，腳底在箱庭上的位置。不取整數，走路才會平滑（ADR 0007）。
+    func feet(at position: TilePosition) -> ScenePoint {
         let p = screen(position.i, position.j)
-        return PixelPoint(x: Int(p.x.rounded(.down)), y: Int(p.y.rounded(.down)))
+        return ScenePoint(x: p.x, y: p.y)
     }
 }

@@ -11,8 +11,10 @@ nonisolated struct LoadedCharacter: Sendable {
     let id: String
     /// 跟著互動即時變化的姿勢用這個當場合成。
     let compositor: RigCompositor
-    /// 預先算好的站好與每個動作的每一格。
+    /// 預先算好的站好與每個動作的每一格（像素）。
     let frames: CharacterFrames
+    /// 向量造型（ADR 0007）：角色包有 `vector.json` 時才有，正面用它畫。
+    let vector: VectorRig?
 }
 
 nonisolated enum CharacterPackLibrary {
@@ -38,8 +40,12 @@ nonisolated enum CharacterPackLibrary {
         let data = try Data(contentsOf: pack.appending(path: "rig.json"))
         let compositor = try RigCompositor(rig: JSONDecoder().decode(CharacterRig.self, from: data))
         let oblique = try ObliqueCompositor(rig: compositor.rig)
+        // 有向量造型就一起載入；檔案壞掉時和 rig.json 壞掉一樣，整個角色包不用
+        let vectorFile = pack.appending(path: "vector.json")
+        let vector = FileManager.default.fileExists(atPath: vectorFile.path)
+            ? try VectorRig.decode(Data(contentsOf: vectorFile)) : nil
         return LoadedCharacter(id: pack.lastPathComponent, compositor: compositor,
-                               frames: CharacterFrames(compositor: compositor, oblique: oblique))
+                               frames: CharacterFrames(compositor: compositor, oblique: oblique), vector: vector)
     }
 
     /// 一家有幾隻企鵝。

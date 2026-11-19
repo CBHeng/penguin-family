@@ -19,7 +19,7 @@ struct CharacterFramesTests {
         #expect(frames.image(.hello, frame: Motion.hello.frameCount) == frames.rest)
         #expect(frames.image(.hello, frame: -1) == frames.rest)
         // 沒算過的動作也顯示站好
-        let unknown = Motion(name: "unknown", framesPerSecond: 20, frameCount: 3, pose: { _ in .rest })
+        let unknown = Motion(name: "unknown", framesPerSecond: 20, frameCount: 3, pose: { _ in .rest }, poseAt: { _ in .rest })
         #expect(frames.image(unknown, frame: 0) == frames.rest)
         #expect(frames.frameCount(of: unknown) == 0)
     }

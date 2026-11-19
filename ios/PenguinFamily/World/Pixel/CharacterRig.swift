@@ -112,7 +112,7 @@ nonisolated struct RigPoint: Decodable, Equatable, Sendable {
 }
 
 /// 不透明的 sRGB 顏色。
-nonisolated struct PixelColor: Equatable, Sendable {
+nonisolated struct PixelColor: Hashable, Sendable {
     let red: UInt8
     let green: UInt8
     let blue: UInt8

@@ -36,12 +36,12 @@ struct GameView: View {
     }
 
     /// 一開始誰在台上。作者 2026-11-17 決定：寫移動（A1 第 5～7 項）的期間只有第一隻，
-    /// 第二隻先留在後台；第一隻走穩後（第 8 項）第二隻再上台。
+    /// 第二隻先留在後台；第一隻走穩後（第 12 項）第二隻再上台。
     static func initialStage(_ family: [PenguinID]) -> [PenguinID] {
         Array(family.prefix(1))
     }
 
-    /// 試走的固定路線（作者 2026-11-18 決定：閒晃做好之前，開場自動走一段）。第 7 項閒晃做好後拿掉。
+    /// 試走的固定路線（作者 2026-11-18 決定：閒晃做好之前，開場自動走一段）。第 11 項閒晃做好後拿掉。
     /// 從 (4, 4) 出發，四個方向都會走到，也會繞過沙發（i = 7、j = 6～8）：
     /// 1. 慢走到沙發右側：往右前、再往左前。
     /// 2. 小跑從沙發前面繞到另一側：往左前、左後、右後（往前或往後繞一樣短，照固定順序挑前面）。
@@ -63,7 +63,7 @@ struct GameView: View {
                 .ignoresSafeArea()
             RoomView(
                 room: .indoor,
-                cast: members.map { .init(id: $0.id, frames: $0.character?.frames) },
+                cast: members.map { .init(id: $0.id, frames: $0.character?.frames, vector: $0.character?.vector) },
                 penguins: onStage.compactMap { id in
                     members.first { $0.id == id }.map { .init(id: id, position: $0.position, intent: $0.behavior.intent) }
                 },

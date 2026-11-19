@@ -38,6 +38,12 @@ struct RoomStageTests {
         stage.sprites().contains { $0.key == key }
     }
 
+    /// 繪圖層畫得出這一樣：像素圖、箱庭的多邊形，或向量造型。
+    static func canDraw(_ stage: RoomStage, _ key: RoomStage.SpriteKey) -> Bool {
+        if case .penguinVector(let id) = key { return stage.vectorRigs()[id] != nil }
+        return stage.allBitmaps()[key] != nil || stage.polygons()[key] != nil
+    }
+
     // MARK: - 畫什麼
 
     @Test func firstLookIsBetweenThePenguins() throws {
@@ -62,15 +68,15 @@ struct RoomStageTests {
         #expect(bedIndex < penguinIndex)
     }
 
-    @Test func everySpriteHasABitmap() throws {
+    @Test func everySpriteCanBeDrawn() throws {
         let stage = try Self.stage(withCharacter: [true, false])
-        let bitmaps = stage.allBitmaps()
-        // 背景＋家具＋第一隻（站好＋哈囉每一格）＋灰色剪影
-        #expect(bitmaps.count == 1 + RoomLayout.indoor.furniture.count + 1 + Motion.hello.frameCount + 1)
+        // 像素圖：第一隻（站好＋哈囉每一格）＋灰色剪影；箱庭的背景與家具是多邊形
+        #expect(stage.allBitmaps().count == 1 + Motion.hello.frameCount + 1)
+        #expect(stage.polygons().count == 1 + RoomLayout.indoor.furniture.count)
         stage.setIntent(.hello, for: Self.ids[0], now: 0)
         for t in stride(from: 0.0, through: Motion.hello.duration, by: 0.05) {
             _ = stage.update(now: t)
-            for sprite in stage.sprites() { #expect(bitmaps[sprite.key] != nil, "\(sprite.key) 沒有圖") }
+            for sprite in stage.sprites() { #expect(Self.canDraw(stage, sprite.key), "\(sprite.key) 畫不出來") }
         }
     }
 
@@ -235,7 +241,7 @@ struct RoomStageTests {
         #expect(woke == 1)                                          // 上台要重畫
         #expect(stage.penguin(at: try Self.onPenguin(stage, Self.ids[1])) == Self.ids[1])
         stage.add(Self.ids[1], at: Self.positions[0])               // 已經在台上：不做事，也不換位置
-        #expect(stage.feet(of: Self.ids[1]) == PixelPoint(x: 224, y: 136))
+        #expect(stage.feet(of: Self.ids[1]) == ScenePoint(x: 224, y: 136))
         stage.add(PenguinID("not-in-cast"), at: Self.positions[0])   // 不在後台名單：不做事
         #expect(stage.onStage == Self.ids)
         #expect(woke == 1)
@@ -273,17 +279,17 @@ struct RoomStageTests {
         let stage = RoomView.makeStage(room: .indoor, cast: Self.ids.map { .init(id: $0, frames: nil) },
                                        penguins: [.init(id: Self.ids[0], position: Self.positions[0], intent: .idle)])
         #expect(stage.onStage == [Self.ids[0]])
-        #expect(stage.feet(of: Self.ids[0]) == PixelPoint(x: 192, y: 136))
+        #expect(stage.feet(of: Self.ids[0]) == ScenePoint(x: 192, y: 136))
     }
 
     // MARK: - 走路（A1 第 6 項）
 
     /// 只有第一隻在台上，站在 (4.5, 4.5)，造型有斜向（`ObliqueCompositorTests` 的假角色）。
     /// 主人「剛碰過」，鏡頭不會自己移動，只看走路。
-    static func walkingStage(withCharacter: Bool = true) throws -> RoomStage {
+    static func walkingStage(withCharacter: Bool = true, vector: VectorRig? = nil) throws -> RoomStage {
         let rig = try RigCompositor(rig: RigCompositorTests.decode(ObliqueCompositorTests.json))
         let frames = CharacterFrames(compositor: rig, oblique: try ObliqueCompositorTests.compositor())
-        let stage = RoomStage(room: .indoor, cast: [.init(id: ids[0], frames: withCharacter ? frames : nil)])
+        let stage = RoomStage(room: .indoor, cast: [.init(id: ids[0], frames: withCharacter ? frames : nil, vector: vector)])
         stage.add(ids[0], at: positions[0])
         stage.resize(viewport: CGSize(width: 402, height: 874), displayScale: 3)
         stage.ownerTouched(now: 1000)
@@ -312,14 +318,18 @@ struct RoomStageTests {
         #expect(stage.update(now: 9).arrived.isEmpty)                              // 只回報一次
     }
 
-    @Test func positionOnlyMovesOnAnimationFrames() throws {
+    @Test func positionMovesEveryFrame() throws {
+        // ADR 0007：位置每一格都照時間前進，不等下一張動畫格；走路動畫還是每秒 12 張
         let stage = try Self.walkingStage()
-        stage.setIntent(.walk(to: Tile(i: 8, j: 4), pace: .walk), for: Self.ids[0], now: 0)
+        let id = Self.ids[0]
+        stage.setIntent(.walk(to: Tile(i: 8, j: 4), pace: .walk), for: id, now: 0)
         let first = stage.update(now: 1)
         #expect(first.draw && first.keepRunning)
-        let same = stage.update(now: 1.05)                                         // 還在第 12 格
-        #expect(!same.draw && same.keepRunning)
-        #expect(stage.position(of: Self.ids[0]) == TilePosition(i: 5.0, j: 4.5))
+        let next = stage.update(now: 1.05)                                         // 動畫還在第 12 張
+        #expect(next.draw && next.keepRunning)
+        let p = try #require(stage.position(of: id))
+        #expect(abs(p.i - 5.025) < 1e-12 && p.j == 4.5)
+        #expect(Self.penguinKey(stage) == .penguinGait(id, gait: "walk", facing: .frontRight, frame: 0))
     }
 
     @Test func turnsAtTheCornerAndGoesAroundTheSofa() throws {
@@ -398,13 +408,12 @@ struct RoomStageTests {
         #expect(RoomStage.relation(of: Tile(i: 8, j: 5).center, to: sofa) == .unknown)   // 斜對角
     }
 
-    @Test func everyWalkingSpriteHasABitmap() throws {
+    @Test func everyWalkingSpriteCanBeDrawn() throws {
         let stage = try Self.walkingStage()
-        let bitmaps = stage.allBitmaps()
         stage.setIntent(.walk(to: Tile(i: 5, j: 7), pace: .trot), for: Self.ids[0], now: 0)
         for t in stride(from: 0.0, through: 6, by: 1.0 / 12) {
             _ = stage.update(now: t)
-            for sprite in stage.sprites() { #expect(bitmaps[sprite.key] != nil, "\(sprite.key) 沒有圖") }
+            for sprite in stage.sprites() { #expect(Self.canDraw(stage, sprite.key), "\(sprite.key) 畫不出來") }
         }
     }
 
@@ -416,6 +425,80 @@ struct RoomStageTests {
         #expect(stage.feet(of: Self.ids[0]) == IsoProjection(room: .indoor).feet(at: TilePosition(i: 5.5, j: 4.5)))
     }
 
+    // MARK: - 向量造型（ADR 0007）
+
+    /// 只有第一隻在台上，只有向量造型（`VectorRigTests` 的 20×20 假角色，腳底在 (10, 18)）。
+    static func vectorStage() throws -> RoomStage {
+        let stage = RoomStage(room: .indoor, cast: [.init(id: ids[0], frames: nil, vector: try VectorRigTests.rig())])
+        stage.add(ids[0], at: positions[0])
+        stage.resize(viewport: CGSize(width: 402, height: 874), displayScale: 3)
+        return stage
+    }
+
+    @Test func vectorPenguinFollowsThePoseEveryFrame() throws {
+        let stage = try Self.vectorStage()
+        let id = Self.ids[0]
+        _ = stage.update(now: 0)
+        let still = try #require(stage.sprites().first { $0.key == .penguinVector(id) })
+        // 角色畫布的腳底對到站的點：(192, 136) − (10, 18)
+        #expect(still.x == 182 && still.y == 118 && still.width == 20 && still.height == 20 && still.vector == .front(.rest))
+
+        stage.setIntent(.hello, for: id, now: 10)
+        #expect(stage.update(now: 10.5).draw)
+        #expect(stage.pose(of: id) == HelloMotion.pose(at: 10.5 - 10))
+        let next = stage.update(now: 10.51)                                       // 不等下一張動畫格，每一格都照時間轉
+        #expect(next.draw && next.keepRunning)
+        #expect(stage.pose(of: id) == HelloMotion.pose(at: 10.51 - 10))
+        #expect(stage.sprites().first { $0.key == .penguinVector(id) }?.vector == .front(HelloMotion.pose(at: 10.51 - 10)))
+
+        let end = stage.update(now: 10 + Motion.hello.duration)
+        #expect(end.motionFinished == [id] && stage.pose(of: id) == .rest)
+        #expect(!stage.update(now: 20).draw)                                      // 站好之後不再重畫
+    }
+
+    @Test func vectorPenguinNeedsNoBitmapsAndCanBeTapped() throws {
+        let stage = try Self.vectorStage()
+        #expect(stage.allBitmaps().isEmpty)                                       // 不用像素正面，也不是灰色剪影
+        #expect(Array(stage.vectorRigs().keys) == [Self.ids[0]])
+        #expect(stage.penguin(at: try Self.onPenguin(stage, Self.ids[0])) == Self.ids[0])
+        for sprite in stage.sprites() { #expect(Self.canDraw(stage, sprite.key)) }
+    }
+
+    @Test func vectorPenguinWalksWithTheVectorGaitEveryFrame() throws {
+        let rig = try VectorRigTests.rig(VectorRigTests.walkingJSON)
+        let stage = RoomStage(room: .indoor, cast: [.init(id: Self.ids[0], frames: nil, vector: rig)])
+        stage.add(Self.ids[0], at: Self.positions[0])
+        stage.resize(viewport: CGSize(width: 402, height: 874), displayScale: 3)
+        let id = Self.ids[0]
+        stage.setIntent(.walk(to: Tile(i: 8, j: 4), pace: .walk), for: id, now: 0)   // 往右下（i 往前）走 4 格
+        _ = stage.update(now: 1)
+        let walk = try #require(rig.walk("frontRight"))
+        #expect(stage.vectorPose(of: id) == .oblique(.frontRight, Gait.walk.vectorPose(at: 1, walk: walk)))
+        let sprite = try #require(stage.sprites().first { $0.key == .penguinVector(id) })
+        let feet = try #require(stage.feet(of: id))
+        #expect(sprite.x == feet.x - 10 && sprite.y == feet.y - 18)                  // 斜向也是腳底對到站的點
+        #expect(sprite.vector == stage.vectorPose(of: id))
+        _ = stage.update(now: 1.01)                                                  // 不等下一張動畫格
+        #expect(stage.vectorPose(of: id) == .oblique(.frontRight, Gait.walk.vectorPose(at: 1.01, walk: walk)))
+
+        // 走到後維持走的方向，站姿；哈囉時轉回正面
+        #expect(stage.update(now: 9).arrived.map(\.tile) == [Tile(i: 8, j: 4)])
+        #expect(stage.vectorPose(of: id) == .oblique(.frontRight, .rest))
+        stage.setIntent(.hello, for: id, now: 10)
+        #expect(stage.vectorPose(of: id) == .front(.rest))
+        #expect(stage.allBitmaps().isEmpty)                                          // 四個斜向都是向量，不用像素
+    }
+
+    @Test func vectorPenguinWithoutObliquesFallsBackToPixelWalking() throws {
+        // 向量造型只有正面時：斜向用像素的走路圖
+        let stage = try Self.walkingStage(vector: try VectorRigTests.rig())
+        let id = Self.ids[0]
+        stage.setIntent(.walk(to: Tile(i: 8, j: 4), pace: .walk), for: id, now: 0)
+        _ = stage.update(now: 1)
+        #expect(stage.vectorPose(of: id) == nil)
+        #expect(Self.penguinKey(stage) == .penguinGait(id, gait: "walk", facing: .frontRight, frame: 0))
+    }
+
     // MARK: - 一家
 
     @Test func eventLogNamesEachPenguin() {
@@ -424,7 +507,7 @@ struct RoomStageTests {
     }
 
     @Test func gameStartsWithOnlyTheFirstPenguinOnStage() {
-        // A1 第 5 項：寫移動的期間第二隻先留在後台；第 8 項第二隻上台時改這個測試
+        // A1 第 5 項：寫移動的期間第二隻先留在後台；第 12 項第二隻上台時改這個測試
         #expect(GameView.initialStage(Self.ids) == [Self.ids[0]])
         #expect(GameView.initialStage([]).isEmpty)
     }
