@@ -1,7 +1,7 @@
 /// 箱庭上的一塊凸多邊形與它的顏色（單位：箱庭的單位）。繪圖層把它切成三角形交給 GPU 畫，任何倍率都清楚（ADR 0007）。
 nonisolated struct ColoredPolygon: Equatable, Sendable {
     let points: [ScenePoint]
-    let color: PixelColor
+    let color: RGBColor
 }
 
 /// 把等角箱庭畫成多邊形。目前的家具都是色塊占位，美術定案後再換。
@@ -11,20 +11,20 @@ nonisolated struct ColoredPolygon: Equatable, Sendable {
 nonisolated enum RoomRenderer {
     /// 占位色塊的顏色，只在箱庭內使用，和角色包的顏色無關。
     enum Palette {
-        static let leftWall = PixelColor(hex: "#E8D9C4")!
-        static let rightWall = PixelColor(hex: "#D6C5AC")!
-        static let floor = PixelColor(hex: "#CFAE84")!
-        static let floorAlternate = PixelColor(hex: "#C7A67C")!   // 交錯的格子
-        static let outline = PixelColor(hex: "#6B5844")!          // 家具外框
-        static let glass = PixelColor(hex: "#BFE3F2")!            // 窗戶玻璃（白天）
-        static let windowFrame = PixelColor(hex: "#8A6E52")!
+        static let leftWall = RGBColor(hex: "#E8D9C4")!
+        static let rightWall = RGBColor(hex: "#D6C5AC")!
+        static let floor = RGBColor(hex: "#CFAE84")!
+        static let floorAlternate = RGBColor(hex: "#C7A67C")!   // 交錯的格子
+        static let outline = RGBColor(hex: "#6B5844")!          // 家具外框
+        static let glass = RGBColor(hex: "#BFE3F2")!            // 窗戶玻璃（白天）
+        static let windowFrame = RGBColor(hex: "#8A6E52")!
 
         /// 家具的頂面、左前面、右前面。
-        static func faces(_ kind: FurnitureKind) -> (top: PixelColor, left: PixelColor, right: PixelColor) {
+        static func faces(_ kind: FurnitureKind) -> (top: RGBColor, left: RGBColor, right: RGBColor) {
             switch kind {
-            case .bed: (PixelColor(hex: "#F2E6D8")!, PixelColor(hex: "#A07C60")!, PixelColor(hex: "#7A5C44")!)
-            case .sofa: (PixelColor(hex: "#D98C7A")!, PixelColor(hex: "#C47A68")!, PixelColor(hex: "#AA6858")!)
-            case .storageBox, .window: (PixelColor(hex: "#C9A26B")!, PixelColor(hex: "#B48E5A")!, PixelColor(hex: "#9E7A4B")!)
+            case .bed: (RGBColor(hex: "#F2E6D8")!, RGBColor(hex: "#A07C60")!, RGBColor(hex: "#7A5C44")!)
+            case .sofa: (RGBColor(hex: "#D98C7A")!, RGBColor(hex: "#C47A68")!, RGBColor(hex: "#AA6858")!)
+            case .storageBox, .window: (RGBColor(hex: "#C9A26B")!, RGBColor(hex: "#B48E5A")!, RGBColor(hex: "#9E7A4B")!)
             }
         }
     }
@@ -131,7 +131,7 @@ nonisolated enum RoomRenderer {
         }
     }
 
-    private static func polygon(_ points: [(x: Double, y: Double)], _ color: PixelColor) -> ColoredPolygon {
+    private static func polygon(_ points: [(x: Double, y: Double)], _ color: RGBColor) -> ColoredPolygon {
         ColoredPolygon(points: points.map { ScenePoint(x: $0.x, y: $0.y) }, color: color)
     }
 

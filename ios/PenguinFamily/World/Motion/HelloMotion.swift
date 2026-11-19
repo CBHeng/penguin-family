@@ -1,15 +1,12 @@
 import Foundation
 
-/// 「哈囉」動作的時間軸（作者 2026-11-07 定案），照私有素材 repo 的 `hello_pose()`。
+/// 「哈囉」動作的時間軸（作者 2026-11-07 定案），和私有素材 repo `vector.js` 的 `helloPose` 相同（逐格比對）。
 ///
 /// 右手舉起小幅快速揮動，頭往畫面左側歪，身體微微壓扁；最後手放下、彈回站好。
 /// 動作參數不分角色，兩隻企鵝共用。
 nonisolated enum HelloMotion {
-    /// 揮得快，要每秒 20 格才看得清楚。
-    static let framesPerSecond = 20.0
     /// 秒，含最後站好的停頓。
     static let duration = 2.8
-    static var frameCount: Int { Int(duration * framesPerSecond) }
 
     static let armUp = -140.0
     static let headTilt = -9.0
@@ -19,12 +16,7 @@ nonisolated enum HelloMotion {
     /// 舉手時身體高度縮到 94%。
     static let squash = 0.94
 
-    /// 第 index 格的姿勢；超過最後一格就是站好的姿勢。
-    static func pose(frame index: Int) -> RigPose {
-        pose(at: Double(index) / framesPerSecond)
-    }
-
-    /// 第 t 秒的姿勢。算式的順序照 Python，讓浮點結果相同。
+    /// 第 t 秒的姿勢；播完之後是站好。算式的順序和 JS 相同，讓浮點結果相同。
     static func pose(at t: Double) -> RigPose {
         if t < 0.35 {
             let k = smooth(t / 0.35)

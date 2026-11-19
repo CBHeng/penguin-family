@@ -4,7 +4,7 @@ import Foundation
 ///
 /// 由私有素材 repo 的 `vector/export.js` 產生。形狀只有兩種：橢圓，和只有直線、三次曲線的路徑
 /// （弧線、二次曲線在匯出時就轉好了），App 這邊不用解析 SVG。
-/// 座標的單位和箱庭相同（一個單位就是原本像素版的一格），角色畫布左上角為原點，y 往下。
+/// 座標的單位和箱庭相同（一個單位等於原本像素版的一格），角色畫布左上角為原點，y 往下。
 nonisolated struct VectorRig: Decodable, Sendable {
     static let supportedFormat = 1
 
@@ -191,38 +191,38 @@ nonisolated struct VectorRig: Decodable, Sendable {
     }
 
     func validate() throws {
-        guard format == Self.supportedFormat else { throw CharacterRigError.unsupportedFormat(format) }
-        guard PixelColor(hex: outline.color) != nil, outline.width > 0 else { throw CharacterRigError.invalidColor(outline.color) }
-        guard let front = facings["front"], front.neckY != nil else { throw CharacterRigError.invalidDirection("front") }
+        guard format == Self.supportedFormat else { throw VectorRigError.unsupportedFormat(format) }
+        guard RGBColor(hex: outline.color) != nil, outline.width > 0 else { throw VectorRigError.invalidColor(outline.color) }
+        guard let front = facings["front"], front.neckY != nil else { throw VectorRigError.invalidDirection("front") }
         for part in ["body", "arm", "head"] where front.parts[part] == nil {
-            throw CharacterRigError.missingPart(part)
+            throw VectorRigError.missingPart(part)
         }
         for (name, facing) in facings {
             guard facing.drawOrder.count == facing.parts.count, Set(facing.drawOrder) == Set(facing.parts.keys) else {
-                throw CharacterRigError.invalidDirection(name)
+                throw VectorRigError.invalidDirection(name)
             }
             if name != "front" {
                 // 斜向：走路會動到身體、手、頭與兩隻腳
                 guard Self.obliqueNames.contains(name), let walk = facing.walk, Self.feetParts.contains(walk.leftFoot),
                       abs(walk.armSide) == 1, walk.peek.keys.allSatisfy(Self.feetParts.contains)
-                else { throw CharacterRigError.invalidDirection(name) }
+                else { throw VectorRigError.invalidDirection(name) }
                 for part in ["body", "arm", "head"] + Self.feetParts where facing.parts[part] == nil {
-                    throw CharacterRigError.missingPart(part)
+                    throw VectorRigError.missingPart(part)
                 }
             }
             for (partName, part) in facing.parts {
-                guard !part.silhouette.isEmpty else { throw CharacterRigError.missingPart(partName) }
+                guard !part.silhouette.isEmpty else { throw VectorRigError.missingPart(partName) }
                 for layer in part.layers {
                     switch (layer.fill, layer.stroke, layer.width) {
                     case let (fill?, nil, _):
-                        guard PixelColor(hex: fill) != nil else { throw CharacterRigError.invalidColor(fill) }
+                        guard RGBColor(hex: fill) != nil else { throw VectorRigError.invalidColor(fill) }
                     case let (nil, stroke?, width?) where width > 0:
-                        guard PixelColor(hex: stroke) != nil else { throw CharacterRigError.invalidColor(stroke) }
+                        guard RGBColor(hex: stroke) != nil else { throw VectorRigError.invalidColor(stroke) }
                     default:
-                        throw CharacterRigError.invalidDirection("\(name).\(partName)")
+                        throw VectorRigError.invalidDirection("\(name).\(partName)")
                     }
                     guard !layer.shapes.isEmpty, layer.clip?.contains(where: \.isEmpty) != true else {
-                        throw CharacterRigError.missingPart(partName)
+                        throw VectorRigError.missingPart(partName)
                     }
                 }
             }
@@ -232,33 +232,12 @@ nonisolated struct VectorRig: Decodable, Sendable {
                   let source = facings[mirror.of],
                   mirror.drawOrder.count == source.parts.count, Set(mirror.drawOrder) == Set(source.parts.keys),
                   mirror.shift.keys.allSatisfy({ source.parts[$0] != nil })
-            else { throw CharacterRigError.invalidDirection(name) }
+            else { throw VectorRigError.invalidDirection(name) }
         }
     }
 }
 
 // MARK: - 某一格的樣子
-
-/// 斜向某一格的姿勢（向量）：不取整數，每一格照經過的時間算。單位都是角色畫布的單位。
-nonisolated struct VectorWalkPose: Equatable, Sendable {
-    struct Offset: Equatable, Sendable {
-        var dx: Double
-        var dy: Double
-    }
-
-    /// 上半身（腳以外）以身體的轉軸（腳底）傾斜幾度，正值順時針。
-    var swayDegrees = 0.0
-    /// 上半身往下沉。
-    var dip = 0.0
-    /// 近的手以肩膀往外張開幾度。
-    var armOpenDegrees = 0.0
-    /// 近的手另外往下（負值往上）。
-    var armDy = 0.0
-    /// 腳的名稱（`farFoot`、`nearFoot`）→ 位移。
-    var feet: [String: Offset] = [:]
-
-    static let rest = VectorWalkPose()
-}
 
 /// 向量企鵝某一格的樣子：正面（站著、哈囉）或斜向（站著、走路）。
 nonisolated enum VectorPose: Equatable, Sendable {
@@ -270,40 +249,6 @@ nonisolated enum VectorPose: Equatable, Sendable {
         case .front: .front
         case .oblique(let facing, _): facing
         }
-    }
-}
-
-extension Gait {
-    /// 斜向第 `t` 秒的姿勢（向量）。數字和像素版相同；像素版的下沉、抬腳、手上下晃要取整數格，這裡改成連續的：
-    /// 下沉是落地時最低的平滑起伏，抬腳在搖擺到一側時平滑抬起。算式和私有素材 repo 的 `vector.js` 的 `walkPose` 相同，逐格比對。
-    nonisolated func vectorPose(at t: Double, walk: VectorRig.Walk) -> VectorWalkPose {
-        let ph = (t / cycle).truncatingRemainder(dividingBy: 1)
-        let s = sin(2 * Double.pi * ph)
-        let ahead = walk.forward.x < 0 ? -1.0 : 1.0   // 朝走的方向（畫面左或右）前傾
-        let c = (1 + cos(4 * Double.pi * ph)) / 2
-        let rightFoot = walk.leftFoot == "farFoot" ? "nearFoot" : "farFoot"
-        // 腳的前後（步幅單位）：抬起的腳往前、踩著的腳往後
-        let kLeft = (-stride / 2) * cos(2 * Double.pi * ph)
-        var pose = VectorWalkPose()
-        for (name, k, side) in [(walk.leftFoot, kLeft, s), (rightFoot, -kLeft, -s)] {
-            let lift = Double(self.lift) * Self.smoothstep(0.1, 0.6, side)
-            let peek = (walk.peek[name] ?? 0) * max(0, -k)   // 越往後越往下露
-            pose.feet[name] = .init(dx: walk.forward.x * k, dy: walk.forward.y * k - lift + peek)
-        }
-        // 手：up 是手往上的程度（-1～1）。慢走時往手那側傾就往下；拍手時往上會多張開
-        let wave = armBobSteps == 1 ? s : sin(4 * Double.pi * ph)
-        let up = -wave * Double(walk.armSide)
-        pose.swayDegrees = sway * s + ahead * lean
-        pose.dip = Double(dip) * c * c
-        pose.armOpenDegrees = armOpen + flap * up
-        pose.armDy = -armBob * up
-        return pose
-    }
-
-    /// `a` 到 `b` 之間平滑地從 0 變 1（同 `HelloMotion` 的 smoothstep）。
-    nonisolated static func smoothstep(_ a: Double, _ b: Double, _ x: Double) -> Double {
-        let t = min(1, max(0, (x - a) / (b - a)))
-        return t * t * (3 - 2 * t)
     }
 }
 
@@ -398,4 +343,13 @@ extension VectorRig {
             return (look, out)
         }
     }
+}
+
+/// 角色包壞掉的地方。
+nonisolated enum VectorRigError: Error, Equatable {
+    case unsupportedFormat(Int)
+    case invalidColor(String)
+    case missingPart(String)
+    /// 方向少了必要的內容，或內容不一致（例如 `drawOrder` 沒有剛好列出每個部件）。
+    case invalidDirection(String)
 }

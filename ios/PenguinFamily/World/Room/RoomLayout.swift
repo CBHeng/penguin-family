@@ -23,13 +23,7 @@ nonisolated struct TilePosition: Equatable, Hashable, Sendable {
     var j: Double
 }
 
-/// 像素圖上的一點（整數格，圖的左上角是原點）。
-nonisolated struct PixelPoint: Equatable, Hashable, Sendable {
-    var x: Int
-    var y: Int
-}
-
-/// 箱庭上的一點（單位，可以有小數；箱庭左上角是原點，y 往下）。一個單位就是原本像素版的一格（ADR 0007）。
+/// 箱庭上的一點（單位，可以有小數；箱庭左上角是原點，y 往下）。一個單位等於原本像素版的一格（ADR 0007）。
 nonisolated struct ScenePoint: Equatable, Hashable, Sendable {
     var x: Double
     var y: Double
@@ -47,7 +41,7 @@ nonisolated struct Furniture: Equatable, Sendable {
     let kind: FurnitureKind
     /// 佔用的地板格子。
     let footprint: TileRect
-    /// 高度（像素）。
+    /// 高度（單位）。
     let height: Int
 }
 
@@ -64,7 +58,7 @@ nonisolated struct WallItem: Equatable, Sendable {
     /// 沿著牆從第幾格開始、佔幾格。
     let start: Int
     let length: Int
-    /// 離地多高到多高（像素）。
+    /// 離地多高到多高（單位）。
     let bottom: Int
     let top: Int
 }
@@ -74,7 +68,7 @@ nonisolated struct RoomLayout: Equatable, Sendable {
     /// i 軸、j 軸各幾格。
     let widthTiles: Int
     let depthTiles: Int
-    /// 後牆高度（像素）。
+    /// 後牆高度（單位）。
     let wallHeight: Int
     let furniture: [Furniture]
     let wallItems: [WallItem]

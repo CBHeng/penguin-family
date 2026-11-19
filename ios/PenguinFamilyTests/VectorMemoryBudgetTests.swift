@@ -17,10 +17,8 @@ struct VectorMemoryBudgetTests {
     /// 用最細的螢幕算：iPhone 17 等機型 1pt 是 3 個實體像素。
     static let displayScale = 3.0
 
-    /// 一家會用到的向量角色包：和 `CharacterPackLibrary.loadFamily` 一樣，依名稱取前面幾隻，其中有 `vector.json` 的。
-    static let family: [URL] = CharacterPackParityTests.packs
-        .prefix(CharacterPackLibrary.familySize)
-        .filter { FileManager.default.fileExists(atPath: $0.appending(path: "vector.json").path) }
+    /// 一家會用到的角色包：和 `CharacterPackLibrary.loadFamily` 一樣，依名稱取前面幾隻。
+    static let family = Array(VectorPackParityTests.allPacks.prefix(CharacterPackLibrary.familySize))
 
     @Test(.enabled(if: !family.isEmpty, "沒有向量角色包（乾淨 clone），跳過"))
     func familyFitsTheBudgetOnTheSharpestScreen() throws {

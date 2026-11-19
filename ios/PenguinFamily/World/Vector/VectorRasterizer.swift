@@ -1,5 +1,22 @@
 import CoreGraphics
 
+/// 畫好的圖：每個像素 4 個位元組（R、G、B、A，顏色已經乘過透明度），由上而下、由左而右。直接送進 GPU 當貼圖。
+nonisolated struct RGBABitmap: Equatable, Sendable {
+    let width: Int
+    let height: Int
+    let rgba: [UInt8]
+
+    init(width: Int, height: Int, rgba: [UInt8]) {
+        precondition(rgba.count == width * height * 4, "位元組數和寬高不合")
+        self.width = width
+        self.height = height
+        self.rgba = rgba
+    }
+
+    /// 佔多少記憶體（位元組）。
+    var byteCount: Int { rgba.count }
+}
+
 /// 把向量角色的部件畫成貼圖（ADR 0007）：載入時用 Core Graphics 畫一次，之後每一格在 Metal 轉動、縮放這些貼圖。
 ///
 /// 每個部件畫兩張：
@@ -15,8 +32,8 @@ nonisolated enum VectorRasterizer {
         let name: String
         /// 圖蓋住的範圍（角色畫布的單位，整數）。
         let bounds: CGRect
-        let outline: PixelBitmap
-        let fill: PixelBitmap
+        let outline: RGBABitmap
+        let fill: RGBABitmap
 
         var byteCount: Int { outline.byteCount + fill.byteCount }
     }
@@ -82,7 +99,7 @@ nonisolated enum VectorRasterizer {
     }
 
     /// 開一張透明的圖，座標換成「角色畫布的單位、y 往下」再畫；回傳預乘透明度的 RGBA，由上而下。
-    private static func draw(_ bounds: CGRect, _ pixelsPerUnit: Double, _ body: (CGContext) -> Void) -> PixelBitmap {
+    private static func draw(_ bounds: CGRect, _ pixelsPerUnit: Double, _ body: (CGContext) -> Void) -> RGBABitmap {
         let (width, height) = pixelSize(bounds, pixelsPerUnit)
         var bytes = [UInt8](repeating: 0, count: width * height * 4)
         bytes.withUnsafeMutableBytes { raw in
@@ -94,7 +111,7 @@ nonisolated enum VectorRasterizer {
             ctx.translateBy(x: -bounds.minX, y: -bounds.minY)
             body(ctx)
         }
-        return PixelBitmap(width: width, height: height, rgba: bytes)
+        return RGBABitmap(width: width, height: height, rgba: bytes)
     }
 
     private static func drawLayer(_ layer: VectorRig.Layer, in ctx: CGContext, bounds: CGRect, pixelsPerUnit: Double) {
@@ -163,7 +180,7 @@ nonisolated enum VectorRasterizer {
     }
 
     private static func cgColor(_ hex: String) -> CGColor? {
-        guard let c = PixelColor(hex: hex) else { return nil }
+        guard let c = RGBColor(hex: hex) else { return nil }
         return CGColor(colorSpace: colorSpace, components: [CGFloat(c.red) / 255, CGFloat(c.green) / 255, CGFloat(c.blue) / 255, 1])
     }
 }

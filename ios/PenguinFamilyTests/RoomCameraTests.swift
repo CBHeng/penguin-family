@@ -1,9 +1,9 @@
 import Testing
 @testable import PenguinFamily
 
-/// 鏡頭的數學：範圍限制、對齊像素、慢慢靠近。
+/// 鏡頭的數學：範圍限制、左上角、慢慢靠近。
 struct RoomCameraTests {
-    /// 和屋內一樣大的箱庭（384×256），畫面 134×291（iPhone 17 直拿，每個像素 3pt）。
+    /// 和屋內一樣大的箱庭（384×256），畫面 134×291（iPhone 17 直拿，每個單位 3pt）。
     static func camera(x: Double, y: Double) -> RoomCamera {
         RoomCamera(canvasWidth: 384, canvasHeight: 256, viewportWidth: 134, viewportHeight: 291, centerX: x, centerY: y)
     }
@@ -20,18 +20,11 @@ struct RoomCameraTests {
         #expect(Self.camera(x: 200, y: 999).centerY == 128)
     }
 
-    @Test func topLeftSnapsToScreenPixels() {
-        // 每個箱庭像素 3pt、iPhone 17 是 @3x：一個實體像素是 1/9 箱庭像素
-        let step = 1.0 / 9
+    @Test func topLeftFollowsTheCenterWithoutSnapping() {
         var cam = Self.camera(x: 200, y: 0)
         cam.moveTo(x: 200.4, y: 0)
-        // 左上角 x = 200.4 - 67 = 133.4，最近的 1/9 是 133 + 4/9
-        #expect(abs(cam.topLeft(step: step).x - (133 + 4 * step)) < 1e-9)
-        // 移動不到一個箱庭像素，畫面也跟著動：133.6 → 133 + 5/9
-        cam.moveTo(x: 200.6, y: 0)
-        #expect(abs(cam.topLeft(step: step).x - (133 + 5 * step)) < 1e-9)
-        // step 為 1 時就是整個箱庭像素
-        #expect(cam.topLeft(step: 1).x == 134)
+        // 左上角 x = 200.4 - 67，不對齊實體像素（ADR 0007）
+        #expect(abs(cam.topLeft.x - 133.4) < 1e-9)
     }
 
     @Test func approachGetsCloserThenArrives() {

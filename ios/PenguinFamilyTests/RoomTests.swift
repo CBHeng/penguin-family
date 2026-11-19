@@ -161,11 +161,10 @@ struct RoomTests {
 
     // MARK: - 占位剪影
 
-    @Test func placeholderStandsOnItsAnchor() {
-        let grid = PlaceholderSilhouette.grid
-        let anchor = PlaceholderSilhouette.anchor
-        // 腳底那一列有像素，下面沒有
-        #expect((0..<grid.width).contains { grid[$0, anchor.y] != nil })
-        #expect(anchor.y + 1 == grid.height || (0..<grid.width).allSatisfy { grid[$0, anchor.y + 1] == nil })
+    @Test func placeholderStandsOnItsFeet() throws {
+        // 身體的底部貼著腳底那一點（差不到 1 個單位），不會浮在空中或陷進地板
+        let front = VectorRig.placeholder.front
+        let body = try #require(front.parts["body"]?.silhouette.first?.bounds)
+        #expect(front.feet.y >= body.maxY && front.feet.y - body.maxY < 1)
     }
 }

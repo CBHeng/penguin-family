@@ -73,19 +73,19 @@ struct VectorRigTests {
     }
 
     @Test func rejectsBrokenRigs() {
-        #expect(throws: CharacterRigError.unsupportedFormat(2)) {
+        #expect(throws: VectorRigError.unsupportedFormat(2)) {
             try Self.rig(Self.json.replacingOccurrences(of: "\"format\": 1", with: "\"format\": 2"))
         }
-        #expect(throws: CharacterRigError.invalidColor("red")) {
+        #expect(throws: VectorRigError.invalidColor("red")) {
             try Self.rig(Self.json.replacingOccurrences(of: "\"#26262c\"", with: "\"red\""))
         }
         // 少了手：哈囉會動它，一定要有
-        #expect(throws: CharacterRigError.missingPart("arm")) {
+        #expect(throws: VectorRigError.missingPart("arm")) {
             try Self.rig(Self.json.replacingOccurrences(of: "\"arm\": {", with: "\"wing\": {")
                 .replacingOccurrences(of: "\"body\", \"arm\", \"head\"", with: "\"body\", \"wing\", \"head\""))
         }
         // drawOrder 沒有剛好列出每個部件
-        #expect(throws: CharacterRigError.invalidDirection("front")) {
+        #expect(throws: VectorRigError.invalidDirection("front")) {
             try Self.rig(Self.json.replacingOccurrences(of: "\"body\", \"arm\", \"head\"", with: "\"body\", \"head\""))
         }
         // 路徑不是 M 開頭
@@ -93,22 +93,22 @@ struct VectorRigTests {
             try Self.rig(Self.json.replacingOccurrences(of: "[[\"M\", 8, 7], ", with: "["))
         }
         // 裁切有一組是空的
-        #expect(throws: CharacterRigError.missingPart("body")) {
+        #expect(throws: VectorRigError.missingPart("body")) {
             try Self.rig(Self.json.replacingOccurrences(of: "\"clip\": [[{\"ellipse\": [10, 14, 6, 4]}]]", with: "\"clip\": [[]]"))
         }
     }
 
     @Test func rejectsBrokenObliques() {
         // 斜向少了怎麼走
-        #expect(throws: CharacterRigError.invalidDirection("backLeft")) {
+        #expect(throws: VectorRigError.invalidDirection("backLeft")) {
             try Self.rig(Self.walkingJSON.replacingOccurrences(of: "\"leftFoot\": \"nearFoot\"", with: "\"leftFoot\": \"wing\""))
         }
         // 翻轉的來源不存在
-        #expect(throws: CharacterRigError.invalidDirection("backRight")) {
+        #expect(throws: VectorRigError.invalidDirection("backRight")) {
             try Self.rig(Self.walkingJSON.replacingOccurrences(of: "\"of\": \"backLeft\"", with: "\"of\": \"back\""))
         }
         // 翻轉的方向不能是正面
-        #expect(throws: CharacterRigError.invalidDirection("backRight")) {
+        #expect(throws: VectorRigError.invalidDirection("backRight")) {
             try Self.rig(Self.walkingJSON.replacingOccurrences(of: "\"of\": \"backLeft\"", with: "\"of\": \"front\""))
         }
     }
@@ -217,7 +217,7 @@ struct VectorRigTests {
     // MARK: - 畫成貼圖
 
     /// 某一點（角色畫布的單位）在圖上的 RGBA。
-    static func pixel(_ bitmap: PixelBitmap, _ bounds: CGRect, _ ppu: Double, _ x: Double, _ y: Double) -> [UInt8] {
+    static func pixel(_ bitmap: RGBABitmap, _ bounds: CGRect, _ ppu: Double, _ x: Double, _ y: Double) -> [UInt8] {
         let px = Int((x - bounds.minX) * ppu), py = Int((y - bounds.minY) * ppu)
         let i = (py * bitmap.width + px) * 4
         return Array(bitmap.rgba[i..<i + 4])
@@ -255,14 +255,9 @@ struct VectorRigTests {
 
     // MARK: - 角色包
 
-    @Test func packLoadsVectorWhenPresentAndSkipsBrokenOne() throws {
-        let root = try PenguinDisplayTests.makeRoot(["a": RigCompositorTests.fakeJSON, "b": RigCompositorTests.fakeJSON,
-                                                     "c": RigCompositorTests.fakeJSON])
-        try Data(Self.json.utf8).write(to: root.appending(path: "a/vector.json"))
-        try Data("{ not json".utf8).write(to: root.appending(path: "b/vector.json"))
+    @Test func packLoadsItsVector() throws {
+        let root = try PenguinDisplayTests.makeRoot(["a": Self.json])
         let family = CharacterPackLibrary.loadFamily(in: root)
-        #expect(family.map { $0?.id } == ["a", "c"])         // b 的向量造型壞掉：整個角色包不用
-        #expect(family[0]?.vector?.front.canvas == VectorRig.Size(width: 20, height: 20))
-        #expect(family[1]?.vector == nil)                     // 沒有 vector.json：只有像素造型
+        #expect(family[0]?.vector.front.canvas == VectorRig.Size(width: 20, height: 20))
     }
 }

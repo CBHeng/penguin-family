@@ -4,9 +4,8 @@ import os
 /// 用 Metal 照 `RoomStage` 的清單把每一樣東西畫出來（ADR 0006、0007）。
 ///
 /// - 箱庭（牆、地板、家具）是多邊形：載入時切成三角形放進一個緩衝區，之後每一格只指定畫哪一段。
-/// - 向量企鵝：載入時把每個畫好的方向的每個部件畫成兩張貼圖（外框、顏色，見 `VectorRasterizer`），每一格依姿勢把貼圖轉到畫面上；
+/// - 企鵝：載入時把每個畫好的方向的每個部件畫成兩張貼圖（外框、顏色，見 `VectorRasterizer`），每一格依姿勢把貼圖轉到畫面上；
 ///   先畫整隻的外框，再畫顏色。貼圖照抱抱近景的倍率準備，縮小時用 mipmap。右前、右後翻轉左邊的貼圖，不另外準備。
-/// - 像素圖（灰色剪影，和沒有向量造型的角色；A1 第 10 項拿掉）：取最近的像素，左上角對齊實體像素。
 /// - 邊緣用 4 倍多重取樣抗鋸齒；多重取樣的畫布只在 GPU 晶片上（memoryless），不佔記憶體。
 /// - 顏色不經過轉換：貼圖與頂點顏色都是 sRGB 的數值，畫面標成 sRGB。
 final class SpriteRenderer: NSObject, MTKViewDelegate {
@@ -17,6 +16,7 @@ final class SpriteRenderer: NSObject, MTKViewDelegate {
     static func vectorPixelsPerUnit(displayScale: Double) -> Double {
         vectorMaxPointsPerUnit * max(1, displayScale)
     }
+
     static let sampleCount = 4
 
     /// 和 shader 的 `QuadUniforms` 對應：四個角（左上、右上、左下、右下）與畫面大小，單位是螢幕實體像素。
@@ -53,9 +53,7 @@ final class SpriteRenderer: NSObject, MTKViewDelegate {
     private let commandQueue: MTLCommandQueue
     private let quadPipeline: MTLRenderPipelineState
     private let polygonPipeline: MTLRenderPipelineState
-    private let nearest: MTLSamplerState
     private let smooth: MTLSamplerState
-    private let textures: [RoomStage.SpriteKey: MTLTexture]
     private let polygonBuffer: MTLBuffer?
     /// 每一組多邊形在緩衝區裡是第幾個頂點到第幾個。
     private let polygonRanges: [RoomStage.SpriteKey: Range<Int>]
@@ -72,17 +70,9 @@ final class SpriteRenderer: NSObject, MTKViewDelegate {
               let library = device.makeDefaultLibrary(),
               let quadPipeline = Self.pipeline(device, library, pixelFormat, "quadVertex", "quadFragment"),
               let polygonPipeline = Self.pipeline(device, library, pixelFormat, "polygonVertex", "polygonFragment"),
-              let nearest = Self.sampler(device, smooth: false),
-              let smooth = Self.sampler(device, smooth: true)
+              let smooth = Self.sampler(device)
         else { return nil }
-
         var bytes = 0
-        var textures: [RoomStage.SpriteKey: MTLTexture] = [:]
-        for (key, bitmap) in stage.allBitmaps() {
-            guard let texture = Self.makeTexture(bitmap, device: device, mipmapped: false) else { return nil }
-            textures[key] = texture
-            bytes += bitmap.byteCount
-        }
 
         // 箱庭：每塊凸多邊形用扇形切成三角形
         var vertices: [PolygonVertex] = []
@@ -103,8 +93,8 @@ final class SpriteRenderer: NSObject, MTKViewDelegate {
         let polygonBuffer = vertices.isEmpty ? nil : device.makeBuffer(
             bytes: vertices, length: vertices.count * MemoryLayout<PolygonVertex>.stride, options: .storageModeShared)
 
-        // 向量企鵝：部件畫成貼圖，產生 mipmap
-        let rigs = stage.vectorRigs()
+        // 企鵝：部件畫成貼圖，產生 mipmap
+        let rigs = stage.rigs()
         var parts: [PenguinID: [String: [String: VectorPart]]] = [:]
         let pixelsPerUnit = Self.vectorPixelsPerUnit(displayScale: displayScale)
         let rasterize = PerfSignposts.signposter.beginInterval("rasterize")
@@ -136,9 +126,7 @@ final class SpriteRenderer: NSObject, MTKViewDelegate {
         self.commandQueue = queue
         self.quadPipeline = quadPipeline
         self.polygonPipeline = polygonPipeline
-        self.nearest = nearest
         self.smooth = smooth
-        self.textures = textures
         self.polygonBuffer = polygonBuffer
         self.polygonRanges = ranges
         self.vectorRigs = rigs
@@ -164,17 +152,18 @@ final class SpriteRenderer: NSObject, MTKViewDelegate {
         return try? device.makeRenderPipelineState(descriptor: descriptor)
     }
 
-    private static func sampler(_ device: MTLDevice, smooth: Bool) -> MTLSamplerState? {
+    /// 線性取樣加 mipmap：部件轉動、縮放時邊緣平滑。
+    private static func sampler(_ device: MTLDevice) -> MTLSamplerState? {
         let d = MTLSamplerDescriptor()
-        d.minFilter = smooth ? .linear : .nearest
-        d.magFilter = smooth ? .linear : .nearest
-        d.mipFilter = smooth ? .linear : .notMipmapped
+        d.minFilter = .linear
+        d.magFilter = .linear
+        d.mipFilter = .linear
         d.sAddressMode = .clampToEdge
         d.tAddressMode = .clampToEdge
         return device.makeSamplerState(descriptor: d)
     }
 
-    private static func makeTexture(_ bitmap: PixelBitmap, device: MTLDevice, mipmapped: Bool) -> MTLTexture? {
+    private static func makeTexture(_ bitmap: RGBABitmap, device: MTLDevice, mipmapped: Bool) -> MTLTexture? {
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
             pixelFormat: .rgba8Unorm, width: bitmap.width, height: bitmap.height, mipmapped: mipmapped)
         descriptor.usage = .shaderRead
@@ -221,7 +210,7 @@ final class SpriteRenderer: NSObject, MTKViewDelegate {
         guard let encoder = buffer.makeRenderCommandEncoder(descriptor: pass) else { return }
 
         // 一個單位等於幾個螢幕實體像素
-        let devicePerUnit = transform.pointsPerPixel * size.width / stage.viewport.width
+        let devicePerUnit = transform.pointsPerUnit * size.width / stage.viewport.width
         let viewport = SIMD2<Float>(Float(size.width), Float(size.height))
         func onScreen(_ x: Double, _ y: Double) -> SIMD2<Float> {
             SIMD2(Float((x - transform.topLeftX) * devicePerUnit), Float((y - transform.topLeftY) * devicePerUnit))
@@ -239,8 +228,8 @@ final class SpriteRenderer: NSObject, MTKViewDelegate {
                 encoder.setVertexBuffer(polygonBuffer, offset: 0, index: 0)
                 encoder.setVertexBytes(&polygonUniforms, length: MemoryLayout<PolygonUniforms>.stride, index: 1)
                 encoder.drawPrimitives(type: .triangle, vertexStart: range.lowerBound, vertexCount: range.count)
-            case .penguinVector(let id):
-                guard let pose = sprite.vector, let frame = vectorRigs[id]?.frame(pose),
+            case .penguin(let id):
+                guard let pose = sprite.pose, let frame = vectorRigs[id]?.frame(pose),
                       let parts = vectorParts[id]?[frame.look.source] else { continue }
                 encoder.setRenderPipelineState(quadPipeline)
                 encoder.setFragmentSamplerState(smooth, index: 0)
@@ -257,14 +246,6 @@ final class SpriteRenderer: NSObject, MTKViewDelegate {
                         drawQuad(encoder, corners, viewport, outline ? part.outline : part.fill)
                     }
                 }
-            default:
-                guard let texture = textures[sprite.key] else { continue }
-                encoder.setRenderPipelineState(quadPipeline)
-                encoder.setFragmentSamplerState(nearest, index: 0)
-                // 像素圖：左上角對齊實體像素，每格才一樣大
-                let origin = onScreen(sprite.x, sprite.y).rounded(.toNearestOrAwayFromZero)
-                let w = Float(sprite.width * devicePerUnit), h = Float(sprite.height * devicePerUnit)
-                drawQuad(encoder, [origin, origin + SIMD2(w, 0), origin + SIMD2(0, h), origin + SIMD2(w, h)], viewport, texture)
             }
         }
         encoder.endEncoding()
