@@ -1,8 +1,8 @@
 import Foundation
 
 /// 企鵝面向哪裡：正面（面向鏡頭，站著、哈囉），或沿格線走的斜向四個方向（遊戲設計的「企鵝的方向」）。
-/// 名稱和角色包 `vector.json` 的方向名稱相同。
-nonisolated enum Facing: String, CaseIterable, Sendable {
+/// 名稱和角色包 `vector.json` 的方向名稱相同，閒晃的資料（`wander.json`）也用這些名稱。
+nonisolated enum Facing: String, CaseIterable, Sendable, Decodable {
     case front
     /// 往左下走（沿 j 軸往前）。
     case frontLeft

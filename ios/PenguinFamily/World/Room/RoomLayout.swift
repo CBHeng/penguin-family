@@ -29,7 +29,8 @@ nonisolated struct ScenePoint: Equatable, Hashable, Sendable {
     var y: Double
 }
 
-nonisolated enum FurnitureKind: String, Sendable, CaseIterable {
+/// 家具與牆上東西的種類。名稱也是閒晃的資料（`wander.json`）裡「走去哪」的寫法。
+nonisolated enum FurnitureKind: String, Sendable, CaseIterable, Decodable {
     case bed
     case sofa
     case window

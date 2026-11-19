@@ -13,11 +13,13 @@ import SwiftUI
 /// 上一層的 `body` 每次重算都會重新呼叫 `init`，`State(initialValue:)` 的參數會真的算出來再被丟掉；
 /// 建一次舞台要畫整個房間（模擬器最佳化約 2.8 毫秒、Debug 約 107 毫秒），以前每點一下就在主執行緒白做兩次。
 struct RoomView: View {
-    /// 台上一隻企鵝要給畫面的資料：身分、站的位置、現在的意圖。
+    /// 台上一隻企鵝要給畫面的資料：身分、站的位置、現在的意圖與它的編號（`PenguinBehavior.serial`）。
     struct Penguin: Equatable {
         let id: PenguinID
         let position: TilePosition
         let intent: PenguinBehavior.Intent
+        /// 同樣的意圖連續要兩次時，靠編號不同讓舞台重新開始（也讓 SwiftUI 看得出清單變了）。
+        var serial = 0
     }
 
     let room: RoomLayout
@@ -81,7 +83,7 @@ struct RoomView: View {
     }
 
     /// 讓舞台和清單一致：不在清單裡的下台、新的上台，再更新每一隻的位置與意圖。
-    /// 正在走的企鵝位置由舞台決定，這裡給的位置不會蓋過去；走到後外面會改成終點，兩邊就一致了。
+    /// 正在走、或走路被打斷停在半路的企鵝，位置由舞台決定，這裡給的位置不會蓋過去；走到後外面會改成終點，兩邊就一致了。
     static func sync(_ penguins: [Penguin], on stage: RoomStage) {
         let now = CACurrentMediaTime()
         let ids = Set(penguins.map(\.id))
@@ -89,7 +91,7 @@ struct RoomView: View {
         for penguin in penguins {
             stage.add(penguin.id, at: penguin.position)  // 已經在台上就不做事
             stage.setPosition(penguin.position, for: penguin.id)
-            stage.setIntent(penguin.intent, for: penguin.id, now: now)
+            stage.setIntent(penguin.intent, for: penguin.id, now: now, serial: penguin.serial)
         }
     }
 

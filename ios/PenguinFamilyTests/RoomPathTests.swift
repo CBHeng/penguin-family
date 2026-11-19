@@ -99,4 +99,48 @@ struct RoomPathTests {
             #expect(path.map { Self.isValid($0) } == true, "到不了 \(tile)")
         }
     }
+
+    // MARK: - 閒晃用的：幾步遠、家具旁邊站哪裡（A1 第 11 項）
+
+    @Test func stepCountsMatchTheShortestPath() throws {
+        let counts = Self.room.stepCounts(from: Tile(i: 6, j: 7))
+        // 屋內 144 格，床 6 格、沙發 3 格、箱子 1 格站不上去，其他都走得到
+        #expect(counts.count == 144 - 10)
+        #expect(counts[Tile(i: 6, j: 7)] == 0)
+        #expect(counts[Tile(i: 7, j: 7)] == nil)                                     // 沙發上
+        for goal in [Tile(i: 8, j: 7), Tile(i: 0, j: 0), Tile(i: 11, j: 11), Tile(i: 1, j: 10)] {
+            let path = try #require(RoomPath.find(in: Self.room, from: Tile(i: 6, j: 7), to: goal))
+            #expect(counts[goal] == path.steps, "\(goal)")
+        }
+        #expect(Self.room.stepCounts(from: Tile(i: 7, j: 7)).isEmpty)               // 站在家具上：哪裡都去不了
+    }
+
+    @Test func spotsAroundTheSofaFaceIt() {
+        // 沙發在 i = 7、j = 6～8：四周 8 格，面向沙發
+        let spots = Self.room.spots(beside: .sofa)
+        #expect(spots.count == 8)
+        #expect(spots.contains(RoomSpot(tile: Tile(i: 6, j: 7), facing: .frontRight)))  // 左上側，往 i 前面看
+        #expect(spots.contains(RoomSpot(tile: Tile(i: 8, j: 7), facing: .backLeft)))
+        #expect(spots.contains(RoomSpot(tile: Tile(i: 7, j: 5), facing: .frontLeft)))
+        #expect(spots.contains(RoomSpot(tile: Tile(i: 7, j: 9), facing: .backRight)))
+    }
+
+    @Test func spotsSkipTilesOutsideTheFloor() {
+        // 床在 i = 0～2、j = 1～2，靠著左牆：左邊那一側在地板外面
+        let spots = Self.room.spots(beside: .bed)
+        #expect(spots.count == 3 + 3 + 2)
+        #expect(spots.allSatisfy { Self.room.isWalkable($0.tile) })
+        // 床和右牆之間那一排（j = 0）往左前看著床
+        #expect(spots.filter { $0.tile.j == 0 }.allSatisfy { $0.facing == .frontLeft })
+    }
+
+    @Test func windowSpotsAreUnderTheWindowFacingTheWall() {
+        // 窗戶在右牆（j = 0）第 6～8 格：站在牆腳下，往右後看出去
+        #expect(Self.room.spots(beside: .window) == (6...8).map { RoomSpot(tile: Tile(i: $0, j: 0), facing: .backRight) })
+        let leftWindow = RoomLayout(widthTiles: 4, depthTiles: 4, wallHeight: 40, furniture: [], wallItems: [
+            WallItem(kind: .window, side: .left, start: 1, length: 2, bottom: 10, top: 30),
+        ])
+        #expect(leftWindow.spots(beside: .window) == [1, 2].map { RoomSpot(tile: Tile(i: 0, j: $0), facing: .backLeft) })
+        #expect(Self.room.spots(beside: .storageBox).count == 3)                     // 箱子在角落旁：三面
+    }
 }

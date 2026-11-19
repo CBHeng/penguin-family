@@ -1,15 +1,17 @@
 /// 一隻企鵝的行為狀態機：決定牠現在要做什麼，只輸出意圖，不碰畫面。
 ///
-/// `World` 依 `intent` 播放動作或走路，播完回報 `.motionFinished`、走到回報 `.arrived`；
+/// `World` 依 `intent` 播放動作、站著或走路，播完、站滿回報 `.motionFinished`，走到回報 `.arrived`；
 /// 動作要播多久、怎麼走過去由 `World` 決定，這裡不處理時間，所以可以單獨測試，換畫面技術也能沿用。
 ///
 /// 目前的流程：
 /// - 待機 →（主人點一下）→ 哈囉 →（播完）→ 待機。
 /// - 待機 →（要牠走去某一格）→ 走路 →（走到）→ 待機。
-/// 哈囉中、走路中再點都先不理（點一下的反應依權重是 A1 第 14 項）。
+/// - 待機 →（要牠站著幾秒）→ 站著 →（站滿）→ 待機；站著時被點就哈囉。
+/// - 走路中被點：當場停下哈囉，播完接著走原本那段路（作者 2026-11-19 決定）。
+/// 要牠走去哪、站多久由閒晃（`WanderRoutine`）決定。哈囉中再點不理（點一下的反應依權重是 A1 第 14 項）。
 nonisolated struct PenguinBehavior: Equatable, Sendable {
     /// 走路的快慢：平常慢走，偶爾小跑（遊戲設計的「走路的樣子」）。
-    enum Pace: Equatable, Sendable {
+    enum Pace: String, Equatable, Sendable {
         case walk
         case trot
     }
@@ -20,46 +22,73 @@ nonisolated struct PenguinBehavior: Equatable, Sendable {
         case hello
         /// 走到某一格（沿格線、繞過家具，路由 `World` 找）。
         case walk(to: Tile, pace: Pace)
+        /// 站在原地幾秒：發呆、東張西望的一眼、在窗邊看外面、走幾步停一下。
+        /// `facing` 是要轉向哪裡，nil 維持原本的方向。
+        case stand(facing: Facing?, seconds: Double)
     }
 
     /// 會改變行為的事。
     enum Input: Equatable, Sendable {
         /// 主人點了企鵝一下。
         case ownerTapped
-        /// `World` 播完目前的動作。
+        /// `World` 播完目前的動作，或站滿了。
         case motionFinished
-        /// 要牠走去某一格（目前是試走的固定路線；第 11 項起由閒晃決定）。
+        /// 要牠走去某一格（由閒晃決定）。
         case walkRequested(to: Tile, pace: Pace)
+        /// 要牠站在原地幾秒（由閒晃決定）。
+        case standRequested(facing: Facing?, seconds: Double)
         /// `World` 回報走到了（到不了時停在原地，也算走完）。
         case arrived
     }
 
     private(set) var intent: Intent = .idle
+    /// 被點打斷的那段路，哈囉播完後接著走；沒有被打斷時是 nil。
+    private(set) var interruptedWalk: Intent?
+    /// 意圖每換一次就加一。同樣的意圖連續要兩次（例如往同一個方向站兩次一樣久，中間經過待機）時，
+    /// 畫面只看意圖會以為沒變；看這個編號才知道要重新開始。
+    private(set) var serial = 0
 
     /// 處理一個輸入；意圖有改變時回傳 true，被忽略時回傳 false。
     @discardableResult
     mutating func handle(_ input: Input) -> Bool {
+        guard let next = transition(input) else { return false }
+        // 走路被點打斷：記下這段路；哈囉播完、接回去之後就清掉
+        if case .walk = intent, next == .hello {
+            interruptedWalk = intent
+        } else if intent == .hello {
+            interruptedWalk = nil
+        }
+        intent = next
+        serial += 1
+        return true
+    }
+
+    /// 這個輸入會讓意圖變成什麼；不理時是 nil。
+    private func transition(_ input: Input) -> Intent? {
         switch (intent, input) {
-        case (.idle, .ownerTapped):
-            intent = .hello
+        case (.idle, .ownerTapped), (.stand, .ownerTapped), (.walk, .ownerTapped):
+            // 站著（發呆、東張西望）也算閒著，被點就打招呼；走路中被點當場停下打招呼
+            return .hello
         case (.hello, .motionFinished):
-            intent = .idle
+            // 走路被打斷的話，揮完接著走
+            return interruptedWalk ?? .idle
+        case (.stand, .motionFinished):
+            return .idle
         case (.idle, .walkRequested(let tile, let pace)):
-            intent = .walk(to: tile, pace: pace)
+            return .walk(to: tile, pace: pace)
+        case (.idle, .standRequested(let facing, let seconds)):
+            return .stand(facing: facing, seconds: seconds)
         case (.walk, .arrived):
-            intent = .idle
+            return .idle
         case (.hello, .ownerTapped):
             // 哈囉播放中再點不重來，揮完才能再打招呼
-            return false
-        case (.walk, .ownerTapped):
-            // 走路中先不理；點一下的反應依權重（第 14 項）再決定
-            return false
-        case (.hello, .walkRequested), (.walk, .walkRequested):
-            // 正在做別的事，不換目的地
-            return false
+            return nil
+        case (.hello, .walkRequested), (.walk, .walkRequested), (.stand, .walkRequested),
+             (.hello, .standRequested), (.walk, .standRequested), (.stand, .standRequested):
+            // 正在做別的事，做完才接下一件
+            return nil
         case (_, .motionFinished), (_, .arrived):
-            return false
+            return nil
         }
-        return true
     }
 }
