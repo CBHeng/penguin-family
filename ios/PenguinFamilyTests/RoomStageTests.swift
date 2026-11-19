@@ -392,6 +392,117 @@ struct RoomStageTests {
         #expect(stage.pose(of: id) == .front(HelloMotion.pose(at: 0.5)))
     }
 
+    // MARK: - 站著（A1 第 11 項：發呆、東張西望、在家具旁邊待一下）
+
+    @Test func standTurnsThenReportsWhenDone() throws {
+        let stage = try Self.walkingStage()
+        let id = Self.ids[0]
+        _ = stage.update(now: 0)
+        stage.setIntent(.stand(facing: .backRight, seconds: 3), for: id, now: 10, serial: 1)
+        #expect(stage.facing(of: id) == .backRight)
+        #expect(stage.pose(of: id) == .oblique(.backRight, .rest))
+        var tick = stage.update(now: 10.1)
+        #expect(tick.draw && !tick.keepRunning)                                    // 畫面不動：畫一次就可以暫停
+        #expect(tick.wakeAt == 13 && tick.motionFinished.isEmpty)                  // 站滿時再醒來
+        tick = stage.update(now: 13)
+        #expect(tick.motionFinished == [id])
+        #expect(stage.update(now: 14).motionFinished.isEmpty)                      // 只回報一次
+        #expect(stage.facing(of: id) == .backRight)                                // 站滿後維持方向
+        #expect(RoomStage.motion(for: .stand(facing: nil, seconds: 1)) == nil)
+    }
+
+    @Test func standWithoutFacingKeepsTheWalkingDirection() throws {
+        let stage = try Self.walkingStage()
+        let id = Self.ids[0]
+        stage.setIntent(.walk(to: Tile(i: 5, j: 4), pace: .walk), for: id, now: 0, serial: 1)
+        #expect(stage.update(now: 2).arrived.count == 1)
+        stage.setIntent(.stand(facing: nil, seconds: 1), for: id, now: 2, serial: 3)
+        #expect(stage.facing(of: id) == .frontRight)
+    }
+
+    @Test func sameStandAgainWithANewSerialStartsOver() throws {
+        // 同樣的站著連續要兩次（中間經過待機）：靠編號才知道要重新站
+        let stage = try Self.walkingStage()
+        let id = Self.ids[0]
+        let stand = PenguinBehavior.Intent.stand(facing: .front, seconds: 2)
+        stage.setIntent(stand, for: id, now: 0, serial: 1)
+        #expect(stage.update(now: 2).motionFinished == [id])
+        stage.setIntent(stand, for: id, now: 5, serial: 1)                         // 同一個編號：當作沒變
+        #expect(stage.update(now: 8).motionFinished.isEmpty)
+        stage.setIntent(stand, for: id, now: 8, serial: 3)
+        #expect(stage.update(now: 10).motionFinished == [id])
+    }
+
+    @Test func helloInterruptsStanding() throws {
+        let stage = try Self.walkingStage()
+        let id = Self.ids[0]
+        stage.setIntent(.stand(facing: .backLeft, seconds: 10), for: id, now: 0, serial: 1)
+        stage.setIntent(.hello, for: id, now: 1, serial: 2)
+        #expect(stage.facing(of: id) == .front)
+        #expect(stage.update(now: 1 + Motion.hello.duration).motionFinished == [id])   // 哈囉播完
+        #expect(stage.update(now: 20).motionFinished.isEmpty)                          // 原本的站著不再回報
+    }
+
+    // MARK: - 走路中被點（作者 2026-11-19 決定：當場停下哈囉，揮完接著走）
+
+    /// 從 (4, 4) 往右前慢走到 (8, 4)，在第 2.5 秒（走了 1.25 格，在 (5, 4) 與 (6, 4) 之間）被點、哈囉。
+    static func stoppedMidway() throws -> RoomStage {
+        let stage = try walkingStage()
+        stage.setIntent(.walk(to: Tile(i: 8, j: 4), pace: .walk), for: ids[0], now: 0, serial: 1)
+        _ = stage.update(now: 2.5)
+        stage.setIntent(.hello, for: ids[0], now: 2.5, serial: 2)
+        return stage
+    }
+
+    @Test func helloStopsTheWalkWhereItIs() throws {
+        let stage = try Self.stoppedMidway()
+        let id = Self.ids[0]
+        #expect(stage.position(of: id) == TilePosition(i: 5.75, j: 4.5))
+        #expect(stage.facing(of: id) == .front)
+        let tick = stage.update(now: 3)
+        #expect(tick.arrived.isEmpty)                                              // 停下來不算走到
+        #expect(stage.position(of: id) == TilePosition(i: 5.75, j: 4.5))
+        stage.setPosition(Self.positions[0], for: id)                              // 外面還記著出發點：不蓋過去
+        #expect(stage.position(of: id) == TilePosition(i: 5.75, j: 4.5))
+    }
+
+    @Test func keepsWalkingFromWhereItStopped() throws {
+        let stage = try Self.stoppedMidway()
+        let id = Self.ids[0]
+        stage.setIntent(.walk(to: Tile(i: 8, j: 4), pace: .walk), for: id, now: 10, serial: 3)
+        #expect(stage.position(of: id) == TilePosition(i: 5.75, j: 4.5))         // 不跳回格子中心
+        #expect(stage.facing(of: id) == .frontRight)
+        _ = stage.update(now: 10.5)
+        #expect(stage.position(of: id) == TilePosition(i: 6.0, j: 4.5))           // 慢走每秒半格，接著走
+        #expect(stage.update(now: 15.4).arrived.isEmpty)
+        #expect(stage.update(now: 15.5).arrived == [RoomStage.Arrival(id: id, tile: Tile(i: 8, j: 4))])   // 還剩 2.75 格
+    }
+
+    @Test func goalBehindTurnsBackWithoutJumping() throws {
+        // 停在 (5, 4) 往 (6, 4) 走了 1/4 的地方，要回 (4, 4)：回頭比較近
+        let stage = try Self.stoppedMidway()
+        let id = Self.ids[0]
+        stage.setIntent(.walk(to: Tile(i: 4, j: 4), pace: .walk), for: id, now: 10, serial: 3)
+        #expect(stage.position(of: id) == TilePosition(i: 5.75, j: 4.5))
+        #expect(stage.facing(of: id) == .backLeft)
+        _ = stage.update(now: 10.5)
+        #expect(stage.position(of: id) == TilePosition(i: 5.5, j: 4.5))
+        #expect(stage.update(now: 12.5).arrived.map(\.tile) == [Tile(i: 4, j: 4)])
+    }
+
+    @Test func unreachableGoalFromMidwayStopsAtTheNearerTile() throws {
+        let stage = try Self.stoppedMidway()
+        stage.setIntent(.walk(to: Tile(i: 7, j: 7), pace: .walk), for: Self.ids[0], now: 10, serial: 3)   // 沙發上
+        #expect(stage.update(now: 10.5).arrived.map(\.tile) == [Tile(i: 5, j: 4)])
+        #expect(stage.position(of: Self.ids[0]) == Tile(i: 5, j: 4).center)
+    }
+
+    @Test func placeholderStandsFacingTheFront() throws {
+        let stage = try Self.walkingStage(rig: nil)
+        stage.setIntent(.stand(facing: .backRight, seconds: 1), for: Self.ids[0], now: 0)
+        #expect(stage.pose(of: Self.ids[0]) == .front(.rest))
+    }
+
     @Test func penguinBesideTheSofaIsDrawnInFront() throws {
         // 沙發佔 i = 7、j = 6～8，最靠近主人的角很低；站在它右前方 (8, 7) 的企鵝要畫在沙發前面
         let sofa = try #require(RoomLayout.indoor.furniture.firstIndex { $0.kind == .sofa })
@@ -487,7 +598,7 @@ struct RoomStageTests {
     }
 
     @Test func gameStartsWithOnlyTheFirstPenguinOnStage() {
-        // A1 第 5 項：寫移動的期間第二隻先留在後台；第 12 項第二隻上台時改這個測試
+        // A1 第 5 項：寫移動（到第 11 項閒晃）的期間第二隻先留在後台；第 12 項第二隻上台時改這個測試
         #expect(GameView.initialStage(Self.ids) == [Self.ids[0]])
         #expect(GameView.initialStage([]).isEmpty)
     }

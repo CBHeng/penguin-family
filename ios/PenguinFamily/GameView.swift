@@ -1,21 +1,28 @@
+import QuartzCore
 import SwiftUI
 
-/// 主遊戲：箱庭與一家企鵝。載入完成後才進來，角色包都已經讀好。
+/// 主遊戲：箱庭與一家企鵝。載入完成後才進來，角色包與閒晃的資料都已經讀好。
 ///
-/// 「接線員」：一家的每一隻各有自己的身分、狀態機與位置；誰在台上由 `onStage` 決定（舞台用加入、移除，不用數量）。
+/// 「接線員」：一家的每一隻各有自己的身分、狀態機、閒晃與位置；誰在台上由 `onStage` 決定（舞台用加入、移除，不用數量）。
 /// 主人點了哪一隻，就交給那一隻的狀態機，並把這件事丟給事件紀錄在背景寫入（不等它存完）。
+/// 台上的企鵝一回到待機，就問牠的閒晃接下來做什麼（走去某一格、站著幾秒）。
 struct GameView: View {
     /// 箱庭外面的顏色；載入畫面也用同一個，切換時不閃。
     static let outsideColor = Color(red: 0.23, green: 0.21, blue: 0.19)
 
-    /// 每隻企鵝一開始站的位置（格）：兩隻並排，第二隻在第一隻的畫面右邊。加入走動（A1 第 6、7 項）後會變。
+    /// 現在的箱庭。A1 只有屋內。
+    static let room = RoomLayout.indoor
+
+    /// 每隻企鵝一開始站的位置（格）：兩隻並排，第二隻在第一隻的畫面右邊。
     static let startPositions = [TilePosition(i: 4.5, j: 4.5), TilePosition(i: 5.5, j: 3.5)]
 
-    /// 一家的一隻：身分、造型（nil 用灰色剪影）、狀態機、位置。不在台上時狀態機與位置照樣保留。
+    /// 一家的一隻：身分、造型（nil 用灰色剪影）、狀態機、閒晃、位置。不在台上時這些照樣保留。
     private struct Member {
         let id: PenguinID
         let character: LoadedCharacter?
         var behavior = PenguinBehavior()
+        /// 沒人碰時接下來做什麼；閒晃的資料讀不到時是 nil，牠就只站著。
+        var wander: WanderRoutine?
         var position: TilePosition
     }
 
@@ -25,50 +32,37 @@ struct GameView: View {
     /// 台上有誰，依上台先後。
     @State private var onStage: [PenguinID]
 
-    init(family: [LoadedCharacter?], events: EventLog?) {
+    init(family: [LoadedCharacter?], wander: WanderConfig?, events: EventLog?) {
         self.events = events
         let members = family.enumerated().map { index, character in
             Member(id: PenguinID(character: character, index: index), character: character,
+                   wander: wander.map { WanderRoutine(config: $0, room: Self.room) },
                    position: Self.startPositions[index % Self.startPositions.count])
         }
         _members = State(initialValue: members)
         _onStage = State(initialValue: Self.initialStage(members.map(\.id)))
     }
 
-    /// 一開始誰在台上。作者 2026-11-17 決定：寫移動（A1 第 5～7 項）的期間只有第一隻，
+    /// 一開始誰在台上。作者 2026-11-17 決定：寫移動（A1 第 5～11 項）的期間只有第一隻，
     /// 第二隻先留在後台；第一隻走穩後（第 12 項）第二隻再上台。
     static func initialStage(_ family: [PenguinID]) -> [PenguinID] {
         Array(family.prefix(1))
     }
-
-    /// 試走的固定路線（作者 2026-11-18 決定：閒晃做好之前，開場自動走一段）。第 11 項閒晃做好後拿掉。
-    /// 從 (4, 4) 出發，四個方向都會走到，也會繞過沙發（i = 7、j = 6～8）：
-    /// 1. 慢走到沙發右側：往右前、再往左前。
-    /// 2. 小跑從沙發前面繞到另一側：往左前、左後、右後（往前或往後繞一樣短，照固定順序挑前面）。
-    /// 3. 慢走回起點：往左後、再往右後。
-    static let demoRoute: [(tile: Tile, pace: PenguinBehavior.Pace)] = [
-        (Tile(i: 8, j: 7), .walk),
-        (Tile(i: 5, j: 7), .trot),
-        (Tile(i: 4, j: 4), .walk),
-    ]
-    /// 開場、每段之間停多久（秒）。「走幾步就停一下」（遊戲設計），實機上調。
-    static let demoPause: Duration = .seconds(1.5)
-
-    /// 試走走到第幾段了。
-    @State private var demoLeg = 0
 
     var body: some View {
         ZStack(alignment: .top) {
             Self.outsideColor
                 .ignoresSafeArea()
             RoomView(
-                room: .indoor,
+                room: Self.room,
                 cast: members.map { .init(id: $0.id, vector: $0.character?.vector) },
                 penguins: onStage.compactMap { id in
-                    members.first { $0.id == id }.map { .init(id: id, position: $0.position, intent: $0.behavior.intent) }
+                    members.first { $0.id == id }.map {
+                        .init(id: id, position: $0.position, intent: $0.behavior.intent, serial: $0.behavior.serial)
+                    }
                 },
                 onTap: ownerTapped,
-                onMotionFinished: { id in update(id) { $0.behavior.handle(.motionFinished) } },
+                onMotionFinished: motionFinished,
                 onArrived: arrived)
             .ignoresSafeArea()
             if members.allSatisfy({ $0.character == nil }) {
@@ -79,30 +73,34 @@ struct GameView: View {
                     .background(.black.opacity(0.4), in: Capsule())
             }
         }
-        .task { await walkNextDemoLeg() }
+        // 打開 App 時不特別迎接：牠們直接做自己的事（遊戲設計的「一天的節奏」）
+        .task { for id in onStage { wander(id) } }
     }
 
-    /// 走到了：記下新位置，讓狀態機回到待機；試走還有下一段就停一下再走。
+    /// 動作播完或站滿：狀態機回到待機，接著閒晃。
+    private func motionFinished(_ id: PenguinID) {
+        update(id) { $0.behavior.handle(.motionFinished) }
+        wander(id)
+    }
+
+    /// 走到了：記下新位置，狀態機回到待機，接著閒晃。
     private func arrived(_ arrival: RoomStage.Arrival) {
         update(arrival.id) {
             $0.position = arrival.tile.center
             $0.behavior.handle(.arrived)
         }
-        Task { await walkNextDemoLeg() }
+        wander(arrival.id)
     }
 
-    /// 停一下，再讓台上第一隻走試走路線的下一段。正在做別的事（例如哈囉）就等一下再試。
-    private func walkNextDemoLeg() async {
-        while demoLeg < Self.demoRoute.count {
-            try? await Task.sleep(for: Self.demoPause)
-            guard !Task.isCancelled, demoLeg < Self.demoRoute.count, let id = onStage.first,
-                  let index = members.firstIndex(where: { $0.id == id }) else { return }
-            if case .walk = members[index].behavior.intent { return }   // 已經在走（另一個等待先開始了）
-            let leg = Self.demoRoute[demoLeg]
-            if members[index].behavior.handle(.walkRequested(to: leg.tile, pace: leg.pace)) {
-                demoLeg += 1
-                return
-            }
+    /// 台上的這一隻在待機的話，問牠的閒晃下一步做什麼，交給狀態機。
+    private func wander(_ id: PenguinID) {
+        guard onStage.contains(id) else { return }
+        update(id) { member in
+            guard member.behavior.intent == .idle, var routine = member.wander else { return }
+            var rng = SystemRandomNumberGenerator()
+            let step = routine.next(from: Tile(containing: member.position), now: CACurrentMediaTime(), using: &rng)
+            member.wander = routine
+            if let step { member.behavior.handle(step.request) }
         }
     }
 
@@ -123,5 +121,5 @@ struct GameView: View {
 }
 
 #Preview("沒有角色包") {
-    GameView(family: [nil, nil], events: nil)
+    GameView(family: [nil, nil], wander: WanderConfig.bundled(), events: nil)
 }

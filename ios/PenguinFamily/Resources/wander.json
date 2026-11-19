@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "pace": { "walk": 5, "trot": 1 },
+  "breaks": { "everyTiles": [3, 5], "seconds": [0.8, 2] },
+  "glanceFacings": ["front", "frontLeft", "frontRight", "backLeft", "backRight"],
+  "activities": [
+    { "id": "window", "kind": "visit", "target": "window", "weight": 3, "cooldown": 60, "seconds": [8, 15] },
+    { "id": "sofa", "kind": "visit", "target": "sofa", "weight": 2, "cooldown": 45, "seconds": [4, 8] },
+    { "id": "bed", "kind": "visit", "target": "bed", "weight": 2, "cooldown": 60, "seconds": [4, 8] },
+    { "id": "storageBox", "kind": "visit", "target": "storageBox", "weight": 1, "cooldown": 90, "seconds": [3, 6] },
+    { "id": "stroll", "kind": "stroll", "weight": 5, "cooldown": 0, "tiles": [2, 4], "seconds": [1, 3] },
+    { "id": "zoneOut", "kind": "zoneOut", "weight": 3, "cooldown": 20, "seconds": [5, 10] },
+    { "id": "lookAround", "kind": "lookAround", "weight": 3, "cooldown": 10, "glances": [2, 4], "seconds": [0.8, 1.6] }
+  ]
+}

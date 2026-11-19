@@ -56,11 +56,64 @@ nonisolated enum Step: CaseIterable, Sendable {
     }
 }
 
+/// 家具或牆上東西旁邊站得上去的一格，與站在那裡看著它時面向哪裡（閒晃「走向家具、窗邊」用）。
+nonisolated struct RoomSpot: Equatable, Sendable {
+    let tile: Tile
+    let facing: Facing
+}
+
 nonisolated extension RoomLayout {
     /// 企鵝站得上去的格子：在地板上，而且沒有家具。
     func isWalkable(_ tile: Tile) -> Bool {
         let one = TileRect(x: tile.i, y: tile.j, width: 1, height: 1)
         return floor.contains(one) && !furniture.contains { $0.footprint.intersects(one) }
+    }
+
+    /// 從 `start` 沿格線走到每一格要幾步（繞過家具）；走不到的格子不在裡面，`start` 站不上去時是空的。
+    /// 步數和 `RoomPath.find` 的最短路相同；閒晃一次算好整個房間，不用每一格各找一次路。
+    func stepCounts(from start: Tile) -> [Tile: Int] {
+        guard isWalkable(start) else { return [:] }
+        var counts = [start: 0]
+        var queue = [start]
+        var head = 0
+        while head < queue.count {
+            let tile = queue[head]
+            head += 1
+            for step in Step.allCases {
+                let next = step.from(tile)
+                guard counts[next] == nil, isWalkable(next) else { continue }
+                counts[next] = counts[tile]! + 1
+                queue.append(next)
+            }
+        }
+        return counts
+    }
+
+    /// 某種家具或牆上東西旁邊站得上去的格子，與面向它的方向；站不上去的（牆外、別的家具上）不算。
+    /// - 地上的家具：四周緊鄰的格子，面向家具。
+    /// - 牆上的東西（窗戶）：牆腳下那一排，面向牆。左牆在 i = 0，面向左後；右牆在 j = 0，面向右後。
+    func spots(beside kind: FurnitureKind) -> [RoomSpot] {
+        var spots: [RoomSpot] = []
+        for item in furniture where item.kind == kind {
+            let r = item.footprint
+            for i in r.x..<r.maxX {
+                spots.append(RoomSpot(tile: Tile(i: i, j: r.y - 1), facing: Step.jForward.facing))
+                spots.append(RoomSpot(tile: Tile(i: i, j: r.maxY), facing: Step.jBackward.facing))
+            }
+            for j in r.y..<r.maxY {
+                spots.append(RoomSpot(tile: Tile(i: r.x - 1, j: j), facing: Step.iForward.facing))
+                spots.append(RoomSpot(tile: Tile(i: r.maxX, j: j), facing: Step.iBackward.facing))
+            }
+        }
+        for item in wallItems where item.kind == kind {
+            for k in item.start..<(item.start + item.length) {
+                switch item.side {
+                case .left: spots.append(RoomSpot(tile: Tile(i: 0, j: k), facing: Step.iBackward.facing))
+                case .right: spots.append(RoomSpot(tile: Tile(i: k, j: 0), facing: Step.jBackward.facing))
+                }
+            }
+        }
+        return spots.filter { isWalkable($0.tile) }
     }
 }
 
