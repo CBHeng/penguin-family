@@ -25,6 +25,14 @@ nonisolated struct VectorRig: Decodable, Sendable {
         mirrors = try c.decodeIfPresent([String: Mirror].self, forKey: .mirrors) ?? [:]
     }
 
+    /// 由程式組出來的造型（例如借別隻的形狀塗灰，見 `graySilhouette()`）。
+    init(format: Int = supportedFormat, outline: Outline, facings: [String: Facing], mirrors: [String: Mirror]) {
+        self.format = format
+        self.outline = outline
+        self.facings = facings
+        self.mirrors = mirrors
+    }
+
     struct Outline: Decodable, Sendable {
         let color: String
         /// 外框露在形狀外面的寬度（單位）。

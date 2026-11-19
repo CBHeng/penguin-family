@@ -115,9 +115,19 @@ nonisolated extension RoomLayout {
         }
         return spots.filter { isWalkable($0.tile) }
     }
+
+    /// 某一格（例如另一隻企鵝站的地方）四周緊鄰、站得上去的格子，與面向那一格的方向（閒晃「走去黏著另一隻」用）。
+    func spots(around tile: Tile) -> [RoomSpot] {
+        Step.allCases.compactMap { step in
+            let spot = step.from(tile)
+            // 從旁邊那一格往這一格走的方向，就是面向它的方向
+            guard isWalkable(spot), let toward = Step(from: spot, to: tile) else { return nil }
+            return RoomSpot(tile: spot, facing: toward.facing)
+        }
+    }
 }
 
-/// 在箱庭裡找路：沿格線走、繞過家具（A1 第 6 項）。
+/// 在箱庭裡找路：沿格線走、繞過家具（A1 第 6 項），需要時也繞過另一隻企鵝（A1 第 12 項）。
 ///
 /// 先找最短的路；一樣短的路有好幾條時，挑轉彎最少的，看起來像有目標地走，不會一直左右拐。
 /// 還是一樣時，照 `Step.allCases` 的順序固定挑一條，同樣的起點與終點每次都走同一條路。
@@ -154,8 +164,9 @@ nonisolated struct RoomPath: Equatable, Sendable {
     var turns: Int { max(0, legs.count - 1) }
 
     /// 找一條路；起點或終點站不上去、或到不了時是 nil。起點等於終點時是只有一格的路。
-    static func find(in room: RoomLayout, from start: Tile, to goal: Tile) -> RoomPath? {
-        guard room.isWalkable(start), room.isWalkable(goal) else { return nil }
+    /// `avoiding` 的格子當成站不上去（例如另一隻企鵝站的地方），起點除外；終點在裡面時是 nil。
+    static func find(in room: RoomLayout, from start: Tile, to goal: Tile, avoiding: Set<Tile> = []) -> RoomPath? {
+        guard room.isWalkable(start), room.isWalkable(goal), start == goal || !avoiding.contains(goal) else { return nil }
         if start == goal { return RoomPath(tiles: [start]) }
 
         // 狀態是「站在哪一格、上一步往哪走」，成本先比步數、再比轉彎數（Dijkstra；格子很少，不用堆積）
@@ -185,7 +196,7 @@ nonisolated struct RoomPath: Equatable, Sendable {
             let cost = best[current]!
             for step in Step.allCases {
                 let next = step.from(current.tile)
-                guard room.isWalkable(next) else { continue }
+                guard room.isWalkable(next), !avoiding.contains(next) else { continue }
                 let state = State(tile: next, heading: step)
                 guard !done.contains(state) else { continue }
                 let turned = current.heading.map { $0 != step } ?? false

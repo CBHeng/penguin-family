@@ -5,16 +5,21 @@ import os
 ///
 /// - 箱庭（牆、地板、家具）是多邊形：載入時切成三角形放進一個緩衝區，之後每一格只指定畫哪一段。
 /// - 企鵝：載入時把每個畫好的方向的每個部件畫成兩張貼圖（外框、顏色，見 `VectorRasterizer`），每一格依姿勢把貼圖轉到畫面上；
-///   先畫整隻的外框，再畫顏色。貼圖照抱抱近景的倍率準備，縮小時用 mipmap。右前、右後翻轉左邊的貼圖，不另外準備。
+///   先畫整隻的外框，再畫顏色。貼圖照抱抱近景的倍率準備（螢幕倍率最多算到 2），縮小時用 mipmap。右前、右後翻轉左邊的貼圖，不另外準備。
 /// - 邊緣用 4 倍多重取樣抗鋸齒；多重取樣的畫布只在 GPU 晶片上（memoryless），不佔記憶體。
 /// - 顏色不經過轉換：貼圖與頂點顏色都是 sRGB 的數值，畫面標成 sRGB。
 final class SpriteRenderer: NSObject, MTKViewDelegate {
     /// 向量部件的貼圖準備到每單位幾 pt：抱抱近景最大 8pt（遊戲設計：6～8pt，實機上調）。
     static let vectorMaxPointsPerUnit = 8.0
 
-    /// 向量部件的貼圖每單位幾個實體像素（`displayScale` 是 1pt 幾個實體像素）。
+    /// 貼圖最多照螢幕幾倍準備（作者 2026-11-19 決定）：3 倍螢幕也照 2 倍，每支手機的貼圖一樣大。
+    /// 箱庭最多放大到每單位 3pt，3 倍螢幕只要 9 個像素，2 倍的貼圖（16 個）綽綽有餘；
+    /// 抱抱近景（8pt）在 3 倍螢幕要 24 個，到時候會稍微糊，做抱抱時在實機上看過再決定。
+    static let maxTextureScale = 2.0
+
+    /// 向量部件的貼圖每單位幾個實體像素（`displayScale` 是 1pt 幾個實體像素，超過 `maxTextureScale` 的照它算）。
     static func vectorPixelsPerUnit(displayScale: Double) -> Double {
-        vectorMaxPointsPerUnit * max(1, displayScale)
+        vectorMaxPointsPerUnit * min(max(1, displayScale), maxTextureScale)
     }
 
     static let sampleCount = 4

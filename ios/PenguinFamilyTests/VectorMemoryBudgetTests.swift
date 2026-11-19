@@ -9,8 +9,12 @@ import Testing
 /// 動作不佔貼圖（只是數字）；會讓這個數字變大的是多一隻角色、多一個畫好的方向、多一種形狀（例如表情），
 /// 或貼圖準備得更細。失敗時不要直接調高預算，先和作者討論怎麼省（見架構的記憶體表）。
 ///
+/// 作者 2026-11-19 決定：貼圖最多照螢幕 2 倍準備，所以 3 倍螢幕和 2 倍一樣大；
+/// 角色包不夠時，缺的那隻是借別隻形狀塗灰的替身，貼圖另外畫一份，也算進來（和舞台的後台名單相同）。
+///
 /// 角色包由私有素材 repo 匯出，不進 git；乾淨 clone 下來沒有角色包，這個測試會跳過。
 /// 訊息只用第幾隻，不寫角色 id（角色名稱只能出現在私有 repo）。
+@MainActor
 struct VectorMemoryBudgetTests {
     /// 「用記憶體換時間」的門檻（位元組）。
     static let budget = 50 * 1024 * 1024
@@ -23,15 +27,28 @@ struct VectorMemoryBudgetTests {
     @Test(.enabled(if: !family.isEmpty, "沒有向量角色包（乾淨 clone），跳過"))
     func familyFitsTheBudgetOnTheSharpestScreen() throws {
         let pixelsPerUnit = SpriteRenderer.vectorPixelsPerUnit(displayScale: Self.displayScale)
+        let packs = try Self.family.map { try VectorRig.decode(Data(contentsOf: $0.appending(path: "vector.json"))) }
+        // 一家每一隻實際用的造型，和舞台一樣決定（缺的位置是替身）
+        let ids = (0..<CharacterPackLibrary.familySize).map { PenguinID("member-\($0 + 1)") }
+        let stage = RoomStage(room: .indoor, cast: ids.enumerated().map { i, id in
+            RoomStage.CastMember(id: id, vector: i < packs.count ? packs[i] : nil)
+        })
         var total = 0
         var each: [String] = []
-        for (i, pack) in Self.family.enumerated() {
-            let rig = try VectorRig.decode(Data(contentsOf: pack.appending(path: "vector.json")))
+        for (i, id) in ids.enumerated() {
+            let rig = try #require(stage.rigs()[id])
             let bytes = VectorRasterizer.textureBytes(rig, pixelsPerUnit: pixelsPerUnit)
             total += bytes
-            each.append("第 \(i + 1) 隻 \(bytes / 1024) KB（\(rig.facings.count) 個畫好的方向）")
+            each.append("第 \(i + 1) 隻\(i < packs.count ? "" : "（替身）") \(bytes / 1024) KB（\(rig.facings.count) 個畫好的方向）")
         }
         #expect(total <= Self.budget,
                 "一家的向量貼圖在 3 倍螢幕約 \(total / 1024) KB，超過 \(Self.budget / 1024) KB：\(each.joined(separator: "、"))")
+    }
+
+    @Test func texturesStopGrowingAbove2x() {
+        // 每單位 8pt：1 倍螢幕 8 個像素、2 倍 16 個；3 倍也照 2 倍
+        #expect(SpriteRenderer.vectorPixelsPerUnit(displayScale: 1) == 8)
+        #expect(SpriteRenderer.vectorPixelsPerUnit(displayScale: 2) == 16)
+        #expect(SpriteRenderer.vectorPixelsPerUnit(displayScale: 3) == 16)
     }
 }

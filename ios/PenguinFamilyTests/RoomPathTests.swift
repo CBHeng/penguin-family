@@ -143,4 +143,25 @@ struct RoomPathTests {
         #expect(leftWindow.spots(beside: .window) == [1, 2].map { RoomSpot(tile: Tile(i: 0, j: $0), facing: .backLeft) })
         #expect(Self.room.spots(beside: .storageBox).count == 3)                     // 箱子在角落旁：三面
     }
+
+    // MARK: - 兩隻（A1 第 12 項）：繞開另一隻、走去黏著牠
+
+    @Test func goesAroundTilesToAvoid() throws {
+        let (from, to) = (Tile(i: 4, j: 4), Tile(i: 8, j: 4))
+        #expect(RoomPath.find(in: Self.room, from: from, to: to)?.steps == 4)
+        let around = try #require(RoomPath.find(in: Self.room, from: from, to: to, avoiding: [Tile(i: 6, j: 4)]))
+        #expect(Self.isValid(around) && around.steps == 6 && !around.tiles.contains(Tile(i: 6, j: 4)))
+        #expect(RoomPath.find(in: Self.room, from: from, to: to, avoiding: [to]) == nil)           // 終點被佔住
+        #expect(RoomPath.find(in: Self.room, from: from, to: to, avoiding: [from])?.steps == 4)    // 起點不算
+    }
+
+    @Test func spotsAroundATileFaceIt() {
+        // (6, 7) 的右前方是沙發：其他三面站得上去，都面向 (6, 7)
+        let spots = Self.room.spots(around: Tile(i: 6, j: 7))
+        #expect(Set(spots.map(\.tile)) == [Tile(i: 5, j: 7), Tile(i: 6, j: 6), Tile(i: 6, j: 8)])
+        #expect(spots.contains(RoomSpot(tile: Tile(i: 5, j: 7), facing: .frontRight)))
+        #expect(spots.contains(RoomSpot(tile: Tile(i: 6, j: 6), facing: .frontLeft)))
+        #expect(spots.contains(RoomSpot(tile: Tile(i: 6, j: 8), facing: .backRight)))
+        #expect(Self.room.spots(around: Tile(i: 11, j: 11)).count == 2)              // 房間最前面的角落：只有兩面
+    }
 }

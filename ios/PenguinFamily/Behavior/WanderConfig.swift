@@ -16,11 +16,13 @@ import os
 ///   - `stroll`：隨便走走，走到 `tiles` 步遠的地方，停 `seconds` 秒。
 ///   - `zoneOut`：發呆，原地站 `seconds` 秒。`facing` 不寫就維持原本的方向（作者 2026-11-19 決定）。
 ///   - `lookAround`：東張西望，連續看 `glances` 個方向，每個看 `seconds` 秒。
+///   - `stayClose`：走去黏著另一隻：走到牠旁邊緊鄰的一格，面向牠待 `seconds` 秒（作者 2026-11-19 決定）。
+///     牠正在走的話，走去牠要去的那一格旁邊。台上只有自己時不挑。
 nonisolated struct WanderConfig: Decodable, Equatable, Sendable {
     static let supportedVersion = 1
 
     enum Kind: String, Decodable, Sendable {
-        case visit, stroll, zoneOut, lookAround
+        case visit, stroll, zoneOut, lookAround, stayClose
     }
 
     struct Activity: Decodable, Equatable, Sendable {
@@ -83,7 +85,7 @@ nonisolated struct WanderConfig: Decodable, Equatable, Sendable {
                 guard activity.target != nil else { throw WanderConfigError.invalid("\(name).target") }
             case .stroll:
                 guard let tiles = activity.tiles, tiles.lowerBound >= 1 else { throw WanderConfigError.invalid("\(name).tiles") }
-            case .zoneOut:
+            case .zoneOut, .stayClose:
                 break
             case .lookAround:
                 guard let glances = activity.glances, glances.lowerBound >= 1 else {
