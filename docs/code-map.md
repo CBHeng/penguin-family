@@ -1,13 +1,13 @@
 # 程式地圖
 
-寫給作者與 Claude：快速看懂 App 目前長什麼樣子。只列**已經存在**的程式；規劃中的模組在最後一節。
+寫給作者與 Claude：快速看懂 App 目前長什麼樣子。只列**已經存在**的程式；規劃中的架構與模組在最後兩節。
 
 - **為什麼這樣切**（模組邊界、設計原則、向量做法）看[架構](architecture.md)；這份只回答「有什麼、在哪裡、怎麼串起來」。
 - **每個檔案的細節**寫在檔案開頭的 `///` 註解，這裡一個檔案只寫一句，避免兩邊寫同樣的事、改了一邊忘了另一邊。
 - **保持同步**：`CodeMapTests` 會檢查每個 `.swift` 檔都列在這份文件裡、這裡列的檔案都存在；新增、刪除或改名檔案時，測試失敗就是提醒你回來更新。內容寫得對不對，還是靠人（作者 2026-11-16 決定）。
 - 圖用 [Mermaid](https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/creating-diagrams)：在 GitHub 上會畫成圖；在終端機裡看到的是原始文字。
 
-最後更新：2026-11-19（A1 第 12 項：第二隻回到畫面、兩隻互相讓路、走去黏著另一隻、鏡頭優先看第一隻）。
+最後更新：2026-11-20（新增規劃中的三層架構：模擬、畫面準備、繪圖，ADR 0008 提案中）。
 
 ## 一句話看懂
 
@@ -312,6 +312,140 @@ sequenceDiagram
 | 不在時的痕跡 | `Memory` | 記下點擊 | 補算小事、回來看得到 |
 | 台詞 | `Soul`（未建立） | － | 全部 |
 | 觸覺 | `Feel`（未建立） | － | 全部 |
+
+## 規劃中：模擬、畫面準備、繪圖三層（ADR 0008，提案中）
+
+**提案中，程式還沒改。** 決定與理由見 [ADR 0008](adr/0008-simulation-frame-render-layers.md)，業界做法與來源見[調查](research/simulation-architecture.md)。定案並重構後，這一區取代上面的「誰用誰」與「執行流程」。
+
+### 核心規則
+
+- **世界狀態（world state）只有模擬執行緒（simulation thread）能讀寫。** 狀態機、閒晃、位置、讓路都在這裡。
+- **模擬以固定節拍（fixed tick）推進，每秒 30 次。** 模擬的時間等於節拍數；不讀系統時鐘，也不知道螢幕更新率。
+- **跨執行緒只傳不可變的值。** 事件（event）進模擬；快照（snapshot）與輸出事件（output event）出模擬。交接點用 `Mutex`。
+- **主執行緒每次螢幕更新只做兩件事：** 畫面準備（frame preparation）與 render。它從不等模擬。
+- **render 只照繪製清單（draw list）下 GPU 指令。** 不算姿勢、不排序、不碰狀態機。
+
+### 現在與提案：每次螢幕更新時誰在跑
+
+```mermaid
+flowchart LR
+    subgraph Now["現在（v0.0.7）：全部在主執行緒的同一次呼叫"]
+        direction TB
+        N1["CADisplayLink<br/>每次螢幕更新"] --> N2["RoomStage.update<br/>走路、讓路、姿勢"]
+        N2 -- "播完、走到" --> N3["GameView<br/>狀態機、閒晃挑下一步"]
+        N3 -- "跑完才畫" --> N4["SpriteRenderer.draw"]
+        N4 -. "畫的時候直接讀" .-> N2
+    end
+    subgraph Next["提案：模擬有自己的執行緒"]
+        direction TB
+        S1["模擬執行緒<br/>每 33 ms 一個節拍<br/>狀態機、閒晃、找路"] -- "每個節拍發布" --> B[("快照緩衝<br/>最近兩份")]
+        M1["主執行緒 CADisplayLink<br/>每次螢幕更新"] -- "讀取，不等待" --> B
+        M1 --> M2["畫面準備<br/>內插、姿勢、鏡頭、排序"]
+        M2 -- "繪製清單" --> M3["render<br/>只下 GPU 指令"]
+    end
+```
+
+- **現在**：狀態機轉換、閒晃的決定都在畫圖之前跑完；它們花多久，這一格就晚多久。render 也直接讀存著狀態的 `RoomStage`。
+- **提案**：狀態機在另一條執行緒，主執行緒只讀最新的快照。模擬一時變慢，畫面照最新快照照常畫，不會掉格。
+
+### 資料怎麼流
+
+```mermaid
+flowchart LR
+    Ext["AI 回覆、計時器、步數"]
+    subgraph Main["主執行緒"]
+        direction TB
+        Gesture["手勢（SwiftUI）"]
+        Hit["點擊判斷<br/>用上一份繪製清單"]
+        Camera["鏡頭、縮放<br/>呈現狀態"]
+        Prep["畫面準備<br/>內插、姿勢、排序"]
+        Render["render（Metal）"]
+        UI["SwiftUI 介面<br/>對話泡泡、選單"]
+    end
+    subgraph Sim["模擬執行緒"]
+        direction TB
+        Queue[["事件佇列"]]
+        Tick["節拍（每秒 30 次）"]
+        World[("世界狀態<br/>狀態機、閒晃、位置、讓路")]
+    end
+    Snap[("快照 ×2<br/>Mutex 交接")]
+    Log["事件紀錄<br/>背景寫入"]
+
+    Gesture -- "點一下" --> Hit
+    Gesture -- "拖曳、捏合" --> Camera
+    Hit -- "被點事件" --> Queue
+    Ext -- "事件" --> Queue
+    Queue -- "節拍開頭依序取出" --> Tick
+    Tick -- "讀寫" --> World
+    Tick -- "每個節拍發布" --> Snap
+    Snap -- "讀最近兩份" --> Prep
+    Camera --> Prep
+    Prep -- "繪製清單" --> Render
+    Prep -. "保留上一份" .-> Hit
+    Tick -- "輸出事件" --> Log
+    Tick -- "輸出事件，轉回主執行緒" --> UI
+```
+
+| 資料 | 誰寫 | 誰讀 | 在哪裡 |
+|---|---|---|---|
+| 世界狀態 | 模擬 | 模擬 | 模擬執行緒 |
+| 事件佇列 | 主執行緒（手勢）、背景工作（AI、計時器） | 模擬 | 交接點（`Mutex`） |
+| 快照（最近兩份） | 模擬 | 畫面準備 | 交接點（`Mutex`） |
+| 輸出事件 | 模擬 | 事件紀錄、SwiftUI 介面 | 轉回主執行緒；事件紀錄照舊在背景寫入 |
+| 呈現狀態（鏡頭、縮放、進行中的手勢） | 畫面準備 | 畫面準備、點擊判斷 | 主執行緒 |
+| 繪製清單 | 畫面準備 | render、點擊判斷 | 主執行緒 |
+
+### 時間軸：主人點一下
+
+```mermaid
+sequenceDiagram
+    actor Owner as 主人
+    participant Main as 主執行緒（畫面準備與 render）
+    participant Q as 事件佇列
+    participant Sim as 模擬執行緒
+    participant Snap as 快照緩衝
+
+    Owner->>Main: 點一下
+    Main->>Main: 點擊判斷（上一份繪製清單）
+    Main->>Q: 被點（PenguinID）
+    Note over Sim: 最多等 1 個節拍（33 ms）
+    Sim->>Q: 節拍開頭取出事件
+    Sim->>Sim: 狀態機：待機 → 哈囉
+    Sim->>Snap: 發布快照 N（哈囉從節拍 N 開始）
+    loop 每次螢幕更新（8.3～16.7 ms）
+        Main->>Snap: 讀快照 N-1 與 N
+        Main->>Main: 內插、算姿勢 → 繪製清單 → render
+    end
+    Note over Main: 畫面落後模擬 1 個節拍<br/>點下去到看到哈囉約 33～67 ms
+```
+
+**內插（interpolation）**：主執行緒畫的時間點，是「現在減一個節拍」，落在快照 N-1 與 N 之間，依比例算位置與姿勢。所以模擬每秒只跑 30 次，120Hz 的螢幕仍然每格都有新畫面。代價是畫面固定落後一個節拍。
+
+### 沒事時誰在睡
+
+| 情況 | 模擬執行緒 | 主執行緒 |
+|---|---|---|
+| 有企鵝在走、在播動作 | 每 33 ms 跑一個節拍 | 每次螢幕更新都準備、都畫 |
+| 都站著、沒人碰 | 睡到下一個排定的時間（例如站滿）或有事件進來 | `CADisplayLink` 暫停（ADR 0006） |
+| 拖曳、捏合 | 不受影響 | 每次螢幕更新都畫（只有鏡頭在動） |
+| 模擬變慢 | 追節拍，每次追的數量有上限 | 照最新快照照常畫，不等 |
+
+### 現在的程式會放到哪一層
+
+| 現在 | 提案後 |
+|---|---|
+| `PenguinBehavior`、`WanderRoutine`、`WanderConfig` | 模擬（照用） |
+| `RoomPath`、`RoomLayout` | 模擬（找路、格子）；畫面準備也會讀 `RoomLayout` |
+| `RoomStage` 裡的走路、讓路、站滿、走到 | 模擬 |
+| `RoomStage` 裡的鏡頭、縮放、前後排序、點擊判斷；`RoomCamera`、`RoomZoom`、`RoomRenderer` 的前後順序 | 畫面準備 |
+| `Motion`、`HelloMotion`、`Gait`、`PenguinMotions` | 動作多長給模擬（判斷播完）；第幾秒是什麼姿勢給畫面準備 |
+| `VectorRig.frame(_:)`（姿勢換成每個部件的矩陣） | 畫面準備（現在是 render 在畫的時候算） |
+| `VectorRasterizer`、多邊形切三角形 | 不變：載入時準備好的 GPU 資源 |
+| `SpriteRenderer` | render：只吃繪製清單 |
+| `GameLoop`（在 `MetalRoomView` 裡） | 主執行緒的驅動：畫面準備加 render，有變化才畫 |
+| `GameView` | 只剩外殼：放畫面、接 SwiftUI 介面 |
+| `EventLog` | 接模擬的輸出事件 |
+| 還沒有 | 模擬執行緒的驅動、事件佇列、快照交接（名稱與計時方式在重構時定） |
 
 ## 規劃中、還沒建立
 
