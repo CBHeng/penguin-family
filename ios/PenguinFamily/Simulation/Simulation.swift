@@ -1,6 +1,6 @@
 import Foundation
 
-/// 模擬：唯一的世界狀態（ADR 0008）。台上每一隻的位置、面向、狀態機、閒晃、走路與讓路都在這裡。
+/// 模擬：唯一的世界狀態（ADR 0008）。台上每一隻角色的位置、面向、狀態機、閒晃、移動與讓路都在這裡。不分物種（ADR 0009）。
 ///
 /// - **固定節拍**：每秒 `ticksPerSecond` 個節拍。模擬的時間就是節拍數（`time`），不讀系統時鐘、不知道螢幕更新率。
 /// - **事件**：會改變世界的都是事件（`Event`），先用 `send` 排進佇列。每個節拍（`step`）：
@@ -9,12 +9,13 @@ import Foundation
 /// - **交出去的都是值**：快照（`snapshot`）與輸出事件（`step` 的回傳值），可以跨執行緒傳。
 /// - **不碰畫面**：腳底在畫面上的位置、姿勢、鏡頭、前後順序由畫面準備算；這裡只記「在哪、面向哪、在做什麼、從什麼時候開始」。
 ///
-/// 每隻照自己的動作細節動（`PenguinMotions`，作者 2026-11-19 決定）：哈囉多長、慢走與小跑多快都看那一隻的。
+/// 每隻照自己的動作資料動（`CharacterMotions`，作者 2026-11-19 決定；ADR 0009）：一次性的動作多長、播的時候轉向哪裡、
+/// 慢與快一秒走幾格都看那一隻的。角色沒有某個動作時，那個意圖馬上算播完。
 ///
 /// 兩隻互相讓路（作者 2026-11-19 決定）：走路時要走進的下一格被別隻佔住，就停在格子中心等；
 /// 等了一陣子還擋著就找一條繞開牠的路（第一隻等久一點，迎面撞上時第二隻先讓），繞不過去、等太久就停在原地算走到。
 ///
-/// 走路中被點（作者 2026-11-19 決定）：停在當下的位置（可能在兩格之間）哈囉，揮完從停的地方沿格線接著走，不跳回格子中心。
+/// 移動中被點（作者 2026-11-19 決定）：停在當下的位置（可能在兩格之間）哈囉，揮完從停的地方沿格線接著走，不跳回格子中心。
 nonisolated struct Simulation: Sendable {
     /// 每秒幾個節拍（作者 2026-11-20 決定，ADR 0008）。
     static let ticksPerSecond = 30
@@ -25,9 +26,9 @@ nonisolated struct Simulation: Sendable {
 
     /// 後台名單的一隻。名單的順序就是一家的順序，最前面的是第一隻。
     struct CastMember: Sendable {
-        let id: PenguinID
-        /// 這隻各狀態怎麼動；沒有角色包時是作者定案的那一份。
-        var motions: PenguinMotions = .standard
+        let id: CharacterID
+        /// 這隻的動作資料（已經換好替身的，見 `StandIn`）。
+        var motions: CharacterMotions = .placeholder
         /// 閒晃的資料；nil 時牠不會自己找事做，只照事件動（資料讀不到時，或測試）。
         var wander: WanderConfig? = nil
     }
@@ -35,25 +36,25 @@ nonisolated struct Simulation: Sendable {
     /// 會改變世界的事。
     enum Event: Equatable, Sendable {
         /// 讓後台名單裡的一隻站到某一點上台，之後問牠的閒晃要做什麼。不在名單裡或已經在台上時不做事。
-        case enter(PenguinID, at: TilePosition)
+        case enter(CharacterID, at: TilePosition)
         /// 下台：正在做的事直接停掉，不回報。
-        case leave(PenguinID)
+        case leave(CharacterID)
         /// 把台上的一隻放到某一點（之後的「拎起來」也用它）。正在走或停在半路時不做事。
-        case place(PenguinID, at: TilePosition)
+        case place(CharacterID, at: TilePosition)
         /// 主人點了這一隻。`at` 是點的當下，由外面取，只用來記錄。
-        case ownerTapped(PenguinID, at: Date)
+        case ownerTapped(CharacterID, at: Date)
         /// 直接交給這一隻的狀態機，例如要牠走去某一格。
-        case input(PenguinID, PenguinBehavior.Input)
+        case input(CharacterID, CharacterBehavior.Input)
     }
 
     /// 這個節拍發生的事，交給外面（事件紀錄、之後的觸覺與台詞）。
     enum Output: Equatable, Sendable {
         /// 主人點了這一隻（不論牠有沒有回應都記）。
-        case ownerTapped(PenguinID, at: Date)
+        case ownerTapped(CharacterID, at: Date)
         /// 動作播完或站滿。
-        case finished(PenguinID)
+        case finished(CharacterID)
         /// 走到了哪一格（到不了、等太久放棄時是停下來的那一格）。
-        case arrived(PenguinID, Tile)
+        case arrived(CharacterID, Tile)
     }
 
     /// 停在兩格之間：從 `from` 往 `to` 走了 `fraction`（0～1，不含兩端）。
@@ -63,31 +64,32 @@ nonisolated struct Simulation: Sendable {
         let fraction: Double
     }
 
-    /// 台上一隻企鵝。
-    private struct Penguin: Sendable {
-        let id: PenguinID
-        let motions: PenguinMotions
-        var behavior = PenguinBehavior()
+    /// 台上一隻角色。
+    private struct Character: Sendable {
+        let id: CharacterID
+        let motions: CharacterMotions
+        var behavior = CharacterBehavior()
         var wander: WanderRoutine?
-        /// 站在地板的哪一點；走路時一直變。
+        /// 站在地板的哪一點；移動時一直變。
         var position: TilePosition
-        /// 面向哪裡：一開始面向鏡頭；走路時是這一段的方向，走到後維持；哈囉時轉回正面；站著時照意圖轉。
+        /// 面向哪裡：一開始面向鏡頭；移動時是這一段的方向，走到後維持；播動作時照動作資料轉（例如哈囉轉回正面）；站著時照意圖轉。
         var facing: Facing = .front
-        /// 正在播的正面動作，與開始的模擬時間。
-        var playing: (intent: PenguinBehavior.Intent, motion: Motion, start: Double)?
+        /// 正在播的動作：哪個意圖、播多久、開始的模擬時間。
+        var playing: (intent: CharacterBehavior.Intent, duration: Double, start: Double)?
         /// 站著要站到幾秒。
         var standUntil: Double?
         var walking: Walk?
-        /// 走路被打斷時停在兩格之間；在格子中心時是 nil。
+        /// 移動被打斷時停在兩格之間；在格子中心時是 nil。
         var midway: Midway?
     }
 
     /// 正在走的一段路。
     private struct Walk: Sendable {
         let path: RoomPath
-        let pace: PenguinBehavior.Pace
-        let gait: Gait
-        /// 照步態速度從這個時間開始走；等別隻讓路時往後推，等的時間不算。
+        let pace: CharacterBehavior.Pace
+        /// 一秒走幾格（這隻這種快慢的步態）。
+        let speed: Double
+        /// 照速度從這個時間開始走；等別隻讓路時往後推，等的時間不算。
         var start: Double
         /// 在路上走了幾格；走過格子中心時剛好是整數。
         var distance = 0.0
@@ -96,8 +98,8 @@ nonisolated struct Simulation: Sendable {
         /// 等的時候，下次試著繞路的時間。
         var nextDetour: Double?
 
-        /// 走了幾秒：步態照這個算姿勢。
-        var elapsed: Double { distance / gait.tilesPerSecond }
+        /// 走了幾秒：步態的片段照這個播。
+        var elapsed: Double { distance / speed }
     }
 
     let room: RoomLayout
@@ -105,13 +107,13 @@ nonisolated struct Simulation: Sendable {
     private let cast: [CastMember]
     /// 已經跑完幾個節拍。
     private(set) var tick = 0
-    /// 台上的企鵝，依上台先後。
-    private var penguins: [Penguin] = []
+    /// 台上的角色，依上台先後。
+    private var characters: [Character] = []
     /// 還沒處理的事件，依送來的順序。
     private var pending: [Event] = []
     private var rng: SeededRandom
 
-    /// 建立時台上沒有企鵝；用 `.enter` 事件讓牠們上台。`seed` 是閒晃用的亂數種子。
+    /// 建立時台上沒有角色；用 `.enter` 事件讓牠們上台。`seed` 是閒晃用的亂數種子。
     init(room: RoomLayout, cast: [CastMember], seed: UInt64) {
         self.room = room
         self.cast = cast
@@ -122,27 +124,27 @@ nonisolated struct Simulation: Sendable {
     var time: Double { Double(tick) / Double(Self.ticksPerSecond) }
 
     /// 台上有誰，依上台先後。
-    var onStage: [PenguinID] { penguins.map(\.id) }
+    var onStage: [CharacterID] { characters.map(\.id) }
 
     /// 還有東西在動、或有事件在等：要繼續跑節拍。否則可以停下來，等事件或 `wakeAt`。
     var isActive: Bool { !pending.isEmpty || isMoving }
 
-    /// 有企鵝正在播動作或走路。站著不算：畫面不動，只要到時間（`wakeAt`）再跑。
-    var isMoving: Bool { penguins.contains { $0.playing != nil || $0.walking != nil } }
+    /// 有角色正在播動作或移動。站著不算：畫面不動，只要到時間（`wakeAt`）再跑。
+    var isMoving: Bool { characters.contains { $0.playing != nil || $0.walking != nil } }
 
     /// 沒有東西在動時，下次要醒來的模擬時間（最早站滿的那隻）；沒有排定的事是 nil。
-    var wakeAt: Double? { penguins.compactMap(\.standUntil).min() }
+    var wakeAt: Double? { characters.compactMap(\.standUntil).min() }
 
     /// 台上某一隻的狀態機；不在台上是 nil。
-    func behavior(of id: PenguinID) -> PenguinBehavior? {
-        penguins.first { $0.id == id }?.behavior
+    func behavior(of id: CharacterID) -> CharacterBehavior? {
+        characters.first { $0.id == id }?.behavior
     }
 
     /// 這個節拍結束時的樣子。
     var snapshot: SimulationSnapshot {
-        SimulationSnapshot(tick: tick, penguins: penguins.map { penguin in
-            SimulationSnapshot.Penguin(id: penguin.id, position: penguin.position, facing: penguin.facing,
-                                       activity: Self.activity(of: penguin))
+        SimulationSnapshot(tick: tick, characters: characters.map { character in
+            SimulationSnapshot.Character(id: character.id, position: character.position, facing: character.facing,
+                                         activity: Self.activity(of: character))
         }, isActive: isActive, wakeAt: wakeAt)
     }
 
@@ -160,7 +162,7 @@ nonisolated struct Simulation: Sendable {
         let start = time
         let events = pending
         pending.removeAll()
-        var entered: [PenguinID] = []
+        var entered: [CharacterID] = []
         for event in events {
             if let id = handle(event, now: start, outputs: &outputs) { entered.append(id) }
         }
@@ -169,18 +171,18 @@ nonisolated struct Simulation: Sendable {
         // 2. 推進到節拍結束
         tick += 1
         let now = time
-        var finished: [PenguinID] = []
-        var arrived: [(id: PenguinID, tile: Tile)] = []
-        for index in penguins.indices {
-            if let playing = penguins[index].playing, now - playing.start >= playing.motion.duration {
-                penguins[index].playing = nil
-                finished.append(penguins[index].id)
+        var finished: [CharacterID] = []
+        var arrived: [(id: CharacterID, tile: Tile)] = []
+        for index in characters.indices {
+            if let playing = characters[index].playing, now - playing.start >= playing.duration {
+                characters[index].playing = nil
+                finished.append(characters[index].id)
             }
-            if let until = penguins[index].standUntil, now >= until {
-                penguins[index].standUntil = nil
-                finished.append(penguins[index].id)
+            if let until = characters[index].standUntil, now >= until {
+                characters[index].standUntil = nil
+                finished.append(characters[index].id)
             }
-            if let tile = advanceWalk(index, now: now) { arrived.append((penguins[index].id, tile)) }
+            if let tile = advanceWalk(index, now: now) { arrived.append((characters[index].id, tile)) }
         }
 
         // 3. 回報給各自的狀態機，回到待機就問閒晃
@@ -205,22 +207,22 @@ nonisolated struct Simulation: Sendable {
         tick = newTick
     }
 
-    /// 處理一個事件；有企鵝上台時回傳牠。
-    private mutating func handle(_ event: Event, now: Double, outputs: inout [Output]) -> PenguinID? {
+    /// 處理一個事件；有角色上台時回傳牠。
+    private mutating func handle(_ event: Event, now: Double, outputs: inout [Output]) -> CharacterID? {
         switch event {
         case .enter(let id, let position):
             guard index(of: id) == nil, let member = cast.first(where: { $0.id == id }) else { return nil }
-            penguins.append(Penguin(id: id, motions: member.motions,
-                                    wander: member.wander.map { WanderRoutine(config: $0, room: room) },
-                                    position: position))
+            characters.append(Character(id: id, motions: member.motions,
+                                        wander: member.wander.map { WanderRoutine(config: $0, room: room) },
+                                        position: position))
             return id
         case .leave(let id):
-            penguins.removeAll { $0.id == id }
+            characters.removeAll { $0.id == id }
         case .place(let id, let position):
-            guard let index = index(of: id), penguins[index].walking == nil, penguins[index].midway == nil else { return nil }
-            penguins[index].position = position
+            guard let index = index(of: id), characters[index].walking == nil, characters[index].midway == nil else { return nil }
+            characters[index].position = position
         case .ownerTapped(let id, let date):
-            // 主人點了就記下，不論企鵝當下有沒有回應
+            // 主人點了就記下，不論角色當下有沒有回應
             outputs.append(.ownerTapped(id, at: date))
             input(id, .ownerTapped, now: now)
         case .input(let id, let request):
@@ -230,61 +232,66 @@ nonisolated struct Simulation: Sendable {
     }
 
     /// 交給這一隻的狀態機；意圖變了就照新的意圖做。
-    private mutating func input(_ id: PenguinID, _ request: PenguinBehavior.Input, now: Double) {
-        guard let index = index(of: id), penguins[index].behavior.handle(request) else { return }
+    private mutating func input(_ id: CharacterID, _ request: CharacterBehavior.Input, now: Double) {
+        guard let index = index(of: id), characters[index].behavior.handle(request) else { return }
         apply(index, now: now)
     }
 
     /// 這一隻在待機的話，問牠的閒晃下一步做什麼，交給狀態機。台上別隻的格子（正在走的話是牠要去的那一格）一起給閒晃。
-    private mutating func wander(_ id: PenguinID, now: Double) {
-        guard let index = index(of: id), penguins[index].behavior.intent == .idle,
-              var routine = penguins[index].wander else { return }
-        let others = Set(penguins.indices.filter { $0 != index }.map { Self.whereabouts(of: penguins[$0]) })
-        let next = routine.next(from: Tile(containing: penguins[index].position), others: others, now: now, using: &rng)
-        penguins[index].wander = routine
-        if let next, penguins[index].behavior.handle(next.request) { apply(index, now: now) }
+    private mutating func wander(_ id: CharacterID, now: Double) {
+        guard let index = index(of: id), characters[index].behavior.intent == .idle,
+              var routine = characters[index].wander else { return }
+        let others = Set(characters.indices.filter { $0 != index }.map { Self.whereabouts(of: characters[$0]) })
+        let next = routine.next(from: Tile(containing: characters[index].position), others: others, now: now, using: &rng)
+        characters[index].wander = routine
+        if let next, characters[index].behavior.handle(next.request) { apply(index, now: now) }
     }
 
-    /// 照狀態機現在的意圖做：換播對應的動作、站著，或開始走路。
-    /// - 哈囉：先轉回正面（哈囉只有正面的圖），作者 2026-11-18 決定。
-    /// - 走路：從現在的位置找路；到不了時停在原地，下一個節拍就回報走到。停在兩格之間時見 `route`。
-    /// - 走路被別的意圖打斷（例如被點就哈囉）：停在當下的位置，記下停在哪兩格之間。
+    /// 照狀態機現在的意圖做：換播對應的動作、站著，或開始移動。
+    /// - 播動作（例如哈囉）：照這隻的動作資料播多久、轉向哪裡（企鵝的哈囉只有正面的圖，所以轉回正面，作者 2026-11-18 決定）。
+    ///   這隻沒有這個動作時播 0 秒，下一個節拍就回報播完。
+    /// - 移動：從現在的位置找路；到不了時停在原地，下一個節拍就回報走到。停在兩格之間時見 `route`。
+    /// - 移動被別的意圖打斷（例如被點就哈囉）：停在當下的位置，記下停在哪兩格之間。
     /// - 站著：轉向意圖給的方向（nil 不轉），站滿後回報播完。
     /// - 待機：不換方向，走到後維持走的方向。
     private mutating func apply(_ index: Int, now: Double) {
-        let intent = penguins[index].behavior.intent
-        penguins[index].playing = penguins[index].motions.motion(for: intent).map { (intent, $0, now) }
-        if let walk = penguins[index].walking { penguins[index].midway = Self.midway(of: walk) }
-        penguins[index].walking = nil
-        penguins[index].standUntil = nil
+        let intent = characters[index].behavior.intent
+        if let name = intent.motionName {
+            let motion = characters[index].motions.motion(named: name)
+            characters[index].playing = (intent, motion?.duration ?? 0, now)
+            if let turn = motion?.facing { characters[index].facing = turn }
+        } else {
+            characters[index].playing = nil
+        }
+        if let walk = characters[index].walking { characters[index].midway = Self.midway(of: walk) }
+        characters[index].walking = nil
+        characters[index].standUntil = nil
         switch intent {
-        case .idle:
+        case .idle, .hello:
             break
         case .stand(let facing, let seconds):
-            if let facing { penguins[index].facing = facing }
-            penguins[index].standUntil = now + seconds
-        case .hello:
-            penguins[index].facing = .front
-        case .walk(let goal, let pace):
-            let gait = penguins[index].motions.gait(for: pace)
-            let (path, walked) = Self.route(from: penguins[index].position, midway: penguins[index].midway, to: goal,
+            if let facing { characters[index].facing = facing }
+            characters[index].standUntil = now + seconds
+        case .move(let goal, let pace):
+            let speed = characters[index].motions.gait(for: pace).tilesPerSecond
+            let (path, walked) = Self.route(from: characters[index].position, midway: characters[index].midway, to: goal,
                                             avoiding: takenByOthers(except: index), in: room)
             // 已經走了一段（從半路出發）時，把開始的時間往前推，位置與步態都從那裡接著算
-            penguins[index].midway = nil
-            penguins[index].walking = Walk(path: path, pace: pace, gait: gait,
-                                           start: now - walked / gait.tilesPerSecond, distance: walked)
+            characters[index].midway = nil
+            characters[index].walking = Walk(path: path, pace: pace, speed: speed,
+                                             start: now - walked / speed, distance: walked)
             moveAlong(index, distance: walked)
         }
     }
 
     // MARK: - 走路
 
-    /// 推進一隻正在走的企鵝：位置照經過的時間前進；走到時回傳走到的那一格。
+    /// 推進一隻正在走的角色：位置照經過的時間前進；走到時回傳走到的那一格。
     /// 站在格子中心、要走進下一格之前，先看那一格有沒有被別隻佔住，佔住就停下來等（見 `wait`）。
     private mutating func advanceWalk(_ index: Int, now: Double) -> Tile? {
-        guard var walk = penguins[index].walking else { return nil }
+        guard var walk = characters[index].walking else { return nil }
         let tiles = walk.path.tiles
-        let target = min(walk.gait.tilesPerSecond * max(0, now - walk.start), Double(walk.path.steps))
+        let target = min(walk.speed * max(0, now - walk.start), Double(walk.path.steps))
         while walk.distance < target {
             let k = Int(walk.distance.rounded(.down))
             if Double(k) == walk.distance, isTaken(tiles[k + 1], except: index) {
@@ -294,10 +301,10 @@ nonisolated struct Simulation: Sendable {
         }
         walk.waitingSince = nil
         walk.nextDetour = nil
-        penguins[index].walking = walk
+        characters[index].walking = walk
         moveAlong(index, distance: walk.distance)
         guard walk.distance >= Double(walk.path.steps) else { return nil }
-        penguins[index].walking = nil
+        characters[index].walking = nil
         return walk.path.goal
     }
 
@@ -312,19 +319,19 @@ nonisolated struct Simulation: Sendable {
             walk.waitingSince = now
             walk.nextDetour = now + detourDelay(for: index)
         }
-        penguins[index].walking = walk
+        characters[index].walking = walk
         moveAlong(index, distance: walk.distance)   // 這個節拍可能先走到了格子中心才停
         if now - (walk.waitingSince ?? now) >= Self.giveUpAfter {
-            penguins[index].walking = nil
+            characters[index].walking = nil
             return here
         }
         if let next = walk.nextDetour, now >= next {
             if let detour = RoomPath.find(in: room, from: here, to: walk.path.goal, avoiding: takenByOthers(except: index)) {
-                penguins[index].walking = Walk(path: detour, pace: walk.pace, gait: walk.gait, start: now)
+                characters[index].walking = Walk(path: detour, pace: walk.pace, speed: walk.speed, start: now)
                 moveAlong(index, distance: 0)
             } else {
-                let retry = now + detourDelay(for: index)   // 先算好：改 penguins 的同時不能再讀它
-                penguins[index].walking?.nextDetour = retry
+                let retry = now + detourDelay(for: index)   // 先算好：改 characters 的同時不能再讀它
+                characters[index].walking?.nextDetour = retry
             }
         }
         return nil
@@ -335,13 +342,13 @@ nonisolated struct Simulation: Sendable {
         index == leadIndex ? Self.detourAfter.lead : Self.detourAfter.others
     }
 
-    /// 一隻企鵝佔住的格子：站的那一格，在兩格之間時是兩格；正在走、沒在等的話，再加上要走進去的下一格，
+    /// 一隻角色佔住的格子（每隻佔一格；ADR 0009：鯊魚比企鵝瘦，也放得進一格）：站的那一格，在兩格之間時是兩格；正在走、沒在等的話，再加上要走進去的下一格，
     /// 兩隻同時要走進同一格時才不會撞在一起。
-    private static func taken(by penguin: Penguin) -> Set<Tile> {
-        let p = penguin.position
+    private static func taken(by character: Character) -> Set<Tile> {
+        let p = character.position
         var tiles: Set<Tile> = [Tile(i: Int((p.i - 0.5).rounded(.down)), j: Int((p.j - 0.5).rounded(.down))),
                                 Tile(i: Int((p.i - 0.5).rounded(.up)), j: Int((p.j - 0.5).rounded(.up)))]
-        if let walk = penguin.walking, walk.waitingSince == nil {
+        if let walk = character.walking, walk.waitingSince == nil {
             let next = Int(walk.distance.rounded(.down)) + 1
             if next < walk.path.tiles.count { tiles.insert(walk.path.tiles[next]) }
         }
@@ -350,8 +357,8 @@ nonisolated struct Simulation: Sendable {
 
     /// 台上別隻佔住的格子。
     private func takenByOthers(except index: Int) -> Set<Tile> {
-        penguins.indices.reduce(into: Set<Tile>()) { tiles, i in
-            if i != index { tiles.formUnion(Self.taken(by: penguins[i])) }
+        characters.indices.reduce(into: Set<Tile>()) { tiles, i in
+            if i != index { tiles.formUnion(Self.taken(by: characters[i])) }
         }
     }
 
@@ -398,44 +405,44 @@ nonisolated struct Simulation: Sendable {
         return Midway(from: tiles[segment], to: tiles[segment + 1], fraction: fraction)
     }
 
-    /// 把正在走的企鵝放到路上走了 `distance` 格的地方，面向這一段的方向（剛好在轉角時面向下一段）。
+    /// 把正在走的角色放到路上走了 `distance` 格的地方，面向這一段的方向（剛好在轉角時面向下一段）。
     private mutating func moveAlong(_ index: Int, distance: Double) {
-        guard let path = penguins[index].walking?.path else { return }
+        guard let path = characters[index].walking?.path else { return }
         let tiles = path.tiles
         guard tiles.count > 1 else {
-            penguins[index].position = tiles[0].center
+            characters[index].position = tiles[0].center
             return
         }
         let segment = min(Int(distance.rounded(.down)), tiles.count - 2)
         let fraction = distance - Double(segment)
         let a = tiles[segment].center, b = tiles[segment + 1].center
-        penguins[index].position = TilePosition(i: a.i + (b.i - a.i) * fraction, j: a.j + (b.j - a.j) * fraction)
-        if let step = Step(from: tiles[segment], to: tiles[segment + 1]) { penguins[index].facing = step.facing }
+        characters[index].position = TilePosition(i: a.i + (b.i - a.i) * fraction, j: a.j + (b.j - a.j) * fraction)
+        if let step = Step(from: tiles[segment], to: tiles[segment + 1]) { characters[index].facing = step.facing }
     }
 
     // MARK: - 小工具
 
-    private func index(of id: PenguinID) -> Int? {
-        penguins.firstIndex { $0.id == id }
+    private func index(of id: CharacterID) -> Int? {
+        characters.firstIndex { $0.id == id }
     }
 
-    /// 第一隻在 `penguins` 的位置：後台名單裡最前面、而且在台上的（第一隻不在台上時是下一隻）。
+    /// 第一隻在 `characters` 的位置：後台名單裡最前面、而且在台上的（第一隻不在台上時是下一隻）。
     private var leadIndex: Int? {
-        cast.lazy.compactMap { member in self.penguins.firstIndex { $0.id == member.id } }.first
+        cast.lazy.compactMap { member in self.characters.firstIndex { $0.id == member.id } }.first
     }
 
-    /// 這一隻在哪一格：正在走（或走路被點打斷）的話是要去的那一格，否則是站的那一格。
-    private static func whereabouts(of penguin: Penguin) -> Tile {
-        for intent in [penguin.behavior.intent, penguin.behavior.interruptedWalk] {
-            if case .walk(let goal, _)? = intent { return goal }
+    /// 這一隻在哪一格：正在移動（或移動被點打斷）的話是要去的那一格，否則是站的那一格。
+    private static func whereabouts(of character: Character) -> Tile {
+        for intent in [character.behavior.intent, character.behavior.interruptedMove] {
+            if case .move(let goal, _)? = intent { return goal }
         }
-        return Tile(containing: penguin.position)
+        return Tile(containing: character.position)
     }
 
-    /// 快照裡的「在做什麼」：正在播的動作優先；走路中等別隻讓路時算站著（站姿）。
-    private static func activity(of penguin: Penguin) -> SimulationSnapshot.Activity {
-        if let playing = penguin.playing { return .motion(playing.intent, since: playing.start) }
-        if let walk = penguin.walking, walk.waitingSince == nil { return .walking(walk.pace, elapsed: walk.elapsed) }
+    /// 快照裡的「在做什麼」：正在播的動作優先；移動中等別隻讓路時算站著（站姿）。
+    private static func activity(of character: Character) -> SimulationSnapshot.Activity {
+        if let playing = character.playing { return .motion(playing.intent, since: playing.start) }
+        if let walk = character.walking, walk.waitingSince == nil { return .moving(walk.pace, elapsed: walk.elapsed) }
         return .still
     }
 }

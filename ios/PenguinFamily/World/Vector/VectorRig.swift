@@ -5,6 +5,10 @@ import Foundation
 /// 由私有素材 repo 的 `vector/export.js` 產生。形狀只有兩種：橢圓，和只有直線、三次曲線的路徑
 /// （弧線、二次曲線在匯出時就轉好了），App 這邊不用解析 SVG。
 /// 座標的單位和箱庭相同（企鵝約 38 單位寬，一格地板 32×16 單位），角色畫布左上角為原點，y 往下。
+///
+/// 不分物種（ADR 0009）：部件叫什麼、有幾個由角色包決定，這裡不要求特定部件。
+/// 部件怎麼動是動作資料（`CharacterMotions`）的事；讀角色包時再檢查片段用到的部件這裡都有。
+/// 匯出的檔可能還帶著私有素材 repo 的算式用的欄位（例如 `neckY`、`walk`），App 不讀。
 nonisolated struct VectorRig: Decodable, Sendable {
     static let supportedFormat = 1
 
@@ -52,24 +56,11 @@ nonisolated struct VectorRig: Decodable, Sendable {
     /// 一個畫好的方向。
     struct Facing: Decodable, Sendable {
         let canvas: Size
-        /// 腳底中心：放到箱庭上的那一點，也是身體壓扁的基準；翻轉的方向以這裡為軸。
+        /// 腳底中心：放到箱庭上的那一點；翻轉的方向以這裡為軸。
         let feet: Point
-        /// 正面才有：身體變矮時，頭和手往下移的量以這條線算。
-        let neckY: Double?
-        /// 斜向才有：怎麼走。
-        let walk: Walk?
         /// 由後往前畫的部件名稱。
         let drawOrder: [String]
         let parts: [String: Part]
-    }
-
-    /// 斜向怎麼走（欄位和私有素材 repo `vector.js` 讀的 `walk` 相同）：往前一個步幅單位在畫面上是 `forward` 單位、畫面左邊是哪隻腳、
-    /// 近的手在身體哪側（1 右、-1 左）、哪隻腳往後踩時多往下露（每往後一個單位露幾個單位）。
-    struct Walk: Decodable, Sendable {
-        let forward: Point
-        let leftFoot: String
-        let armSide: Int
-        let peek: [String: Double]
     }
 
     /// 翻轉的方向：把 `of` 以腳底中心左右翻轉。部件先照 `shift` 挪（翻轉前的座標，例如帽子不跟著翻），
@@ -87,8 +78,6 @@ nonisolated struct VectorRig: Decodable, Sendable {
         let mirror: Mirror?
     }
 
-    /// 斜向的腳。
-    static let feetParts = ["farFoot", "nearFoot"]
     static let obliqueNames = ["frontLeft", "backLeft", "frontRight", "backRight"]
 
     struct Part: Decodable, Sendable {
@@ -176,7 +165,7 @@ nonisolated struct VectorRig: Decodable, Sendable {
         }
     }
 
-    /// 正面：哈囉會動到的三個部件一定要有。
+    /// 正面：一定要有。
     var front: Facing { facings["front"]! }
 
     /// 某個方向（`Facing` 的名稱）怎麼畫；角色包沒有這個方向時是 nil。
@@ -186,9 +175,9 @@ nonisolated struct VectorRig: Decodable, Sendable {
         return Look(source: mirror.of, drawOrder: mirror.drawOrder, mirror: mirror)
     }
 
-    /// 斜向怎麼走；翻轉的方向用來源的（姿勢在翻轉前算）。
-    func walk(_ name: String) -> Walk? {
-        look(name).flatMap { facings[$0.source]?.walk }
+    /// 身體中央在腳底上方幾個單位：正面畫布的一半高度（鏡頭對準這裡）。
+    var bodyCenterAboveFeet: Double {
+        front.feet.y - front.canvas.height / 2
     }
 
     /// 讀進來後檢查內容；有問題就丟錯，不讓壞掉的角色包上台。
@@ -201,23 +190,12 @@ nonisolated struct VectorRig: Decodable, Sendable {
     func validate() throws {
         guard format == Self.supportedFormat else { throw VectorRigError.unsupportedFormat(format) }
         guard RGBColor(hex: outline.color) != nil, outline.width > 0 else { throw VectorRigError.invalidColor(outline.color) }
-        guard let front = facings["front"], front.neckY != nil else { throw VectorRigError.invalidDirection("front") }
-        for part in ["body", "arm", "head"] where front.parts[part] == nil {
-            throw VectorRigError.missingPart(part)
-        }
+        guard facings["front"] != nil else { throw VectorRigError.invalidDirection("front") }
         for (name, facing) in facings {
-            guard facing.drawOrder.count == facing.parts.count, Set(facing.drawOrder) == Set(facing.parts.keys) else {
-                throw VectorRigError.invalidDirection(name)
-            }
-            if name != "front" {
-                // 斜向：走路會動到身體、手、頭與兩隻腳
-                guard Self.obliqueNames.contains(name), let walk = facing.walk, Self.feetParts.contains(walk.leftFoot),
-                      abs(walk.armSide) == 1, walk.peek.keys.allSatisfy(Self.feetParts.contains)
-                else { throw VectorRigError.invalidDirection(name) }
-                for part in ["body", "arm", "head"] + Self.feetParts where facing.parts[part] == nil {
-                    throw VectorRigError.missingPart(part)
-                }
-            }
+            guard name == "front" || Self.obliqueNames.contains(name),
+                  !facing.drawOrder.isEmpty, facing.drawOrder.count == facing.parts.count,
+                  Set(facing.drawOrder) == Set(facing.parts.keys)
+            else { throw VectorRigError.invalidDirection(name) }
             for (partName, part) in facing.parts {
                 guard !part.silhouette.isEmpty else { throw VectorRigError.missingPart(partName) }
                 for layer in part.layers {
@@ -245,25 +223,10 @@ nonisolated struct VectorRig: Decodable, Sendable {
     }
 }
 
-// MARK: - 某一格的樣子
-
-/// 向量企鵝某一格的樣子：正面（站著、哈囉）或斜向（站著、走路）。
-nonisolated enum VectorPose: Equatable, Sendable {
-    case front(RigPose)
-    case oblique(Facing, VectorWalkPose)
-
-    var facing: Facing {
-        switch self {
-        case .front: .front
-        case .oblique(let facing, _): facing
-        }
-    }
-}
-
-// MARK: - 姿勢 → 每個部件的矩陣
+// MARK: - 部件的矩陣
 
 /// 平面上的仿射變換：x' = a·x + c·y + tx、y' = b·x + d·y + ty（和 Core Graphics、SVG 的 matrix() 相同）。
-/// 角度正值是畫面上的順時針（y 往下）。算式和私有素材 repo 的 `vector.js` 一樣，逐格比對才會相同。
+/// 角度正值是畫面上的順時針（y 往下）。算式和私有素材 repo 的 `vector.js` 一樣，在關鍵影格上才會得到相同的矩陣。
 nonisolated struct Affine2D: Equatable, Sendable {
     var a: Double, b: Double, c: Double, d: Double, tx: Double, ty: Double
 
@@ -293,62 +256,28 @@ nonisolated struct Affine2D: Equatable, Sendable {
     }
 }
 
-extension VectorRig.Facing {
-    /// 正面的姿勢 → 每個部件的矩陣（沒列到的部件不動）。
-    ///
-    /// 身體以腳底為基準壓扁（寬度用 1 / 高度）；身體變矮，頭和手跟著往下；身體變寬，手跟著往外。往下、往外都不取整數。
-    nonisolated func frontTransforms(_ pose: RigPose) -> [String: Affine2D] {
-        var out = Dictionary(uniqueKeysWithValues: drawOrder.map { ($0, Affine2D.identity) })
-        guard let body = parts["body"], let arm = parts["arm"], let head = parts["head"] else { return out }
-        let sx = 1 / pose.squash, sy = pose.squash
-        let drop = (body.pivot.y - (neckY ?? body.pivot.y)) * (1 - sy)
-        let armOut = (arm.pivot.x - body.pivot.x) * (sx - 1)
-        out["body"] = .around(body.pivot, .scale(sx, sy))
-        out["arm"] = .translation(armOut, drop) * .around(arm.pivot, .rotation(degrees: pose.armDegrees))
-        out["head"] = .translation(0, drop) * .around(head.pivot, .rotation(degrees: pose.headDegrees))
-        return out
-    }
-
-    /// 斜向的姿勢 → 每個部件的矩陣（畫好的那一邊）。
-    /// 上半身（腳以外）以身體的轉軸（腳底）傾斜再往下沉；近的手先以肩膀往外張開；腳只平移。
-    nonisolated func obliqueTransforms(_ pose: VectorWalkPose) -> [String: Affine2D] {
-        guard let body = parts["body"], let arm = parts["arm"], let walk else {
-            return Dictionary(uniqueKeysWithValues: drawOrder.map { ($0, Affine2D.identity) })
-        }
-        let sway = Affine2D.around(body.pivot, .rotation(degrees: pose.swayDegrees))
-        let upper = Affine2D.translation(0, pose.dip) * sway
-        var out = Dictionary(uniqueKeysWithValues: drawOrder.map { ($0, upper) })
-        // 手在右側（armSide 1）往外是往右：下面往右等於逆時針
-        out["arm"] = .translation(0, pose.dip + pose.armDy)
-            * (sway * .around(arm.pivot, .rotation(degrees: -Double(walk.armSide) * pose.armOpenDegrees)))
-        for name in VectorRig.feetParts {
-            let offset = pose.feet[name]
-            out[name] = .translation(offset?.dx ?? 0, offset?.dy ?? 0)
-        }
-        return out
-    }
-}
-
 extension VectorRig {
     /// 某一格的樣子 → 怎麼畫與每個部件的矩陣；角色包沒有這個方向時是 nil。
-    /// 翻轉的方向：部件先照 `shift` 挪，再套來源的姿勢，最後以腳底中心左右翻轉（同 `vector.js` 的 `facingTransforms`）。
-    nonisolated func frame(_ pose: VectorPose) -> (look: Look, transforms: [String: Affine2D])? {
-        switch pose {
-        case .front(let p):
-            guard let look = look("front"), let front = facings["front"] else { return nil }
-            return (look, front.frontTransforms(p))
-        case .oblique(let facing, let p):
-            guard facing != .front, let look = look(facing.rawValue), let source = facings[look.source] else { return nil }
-            let t = source.obliqueTransforms(p)
-            guard let mirror = look.mirror else { return (look, t) }
-            let flip = Affine2D(a: -1, b: 0, c: 0, d: 1, tx: 2 * source.feet.x, ty: 0)
-            var out: [String: Affine2D] = [:]
-            for name in look.drawOrder {
-                let base = t[name] ?? .identity
-                out[name] = flip * (mirror.shift[name].map { base * .translation($0.x, $0.y) } ?? base)
+    /// 部件照姿勢以自己的轉軸動，姿勢沒列到的部件在原位（ADR 0009）。
+    /// 翻轉的方向：用來源的部件與姿勢，部件先照 `shift` 挪，最後以腳底中心左右翻轉（同 `vector.js` 的 `facingTransforms`）。
+    nonisolated func frame(_ pose: CharacterPose) -> (look: Look, transforms: [String: Affine2D])? {
+        guard let look = look(pose.facing.rawValue), let source = facings[look.source] else { return nil }
+        var t: [String: Affine2D] = [:]
+        for name in source.drawOrder {
+            if let part = pose.parts[name], let pivot = source.parts[name]?.pivot {
+                t[name] = part.matrix(pivot: pivot)
+            } else {
+                t[name] = .identity
             }
-            return (look, out)
         }
+        guard let mirror = look.mirror else { return (look, t) }
+        let flip = Affine2D(a: -1, b: 0, c: 0, d: 1, tx: 2 * source.feet.x, ty: 0)
+        var out: [String: Affine2D] = [:]
+        for name in look.drawOrder {
+            let base = t[name] ?? .identity
+            out[name] = flip * (mirror.shift[name].map { base * .translation($0.x, $0.y) } ?? base)
+        }
+        return (look, out)
     }
 }
 

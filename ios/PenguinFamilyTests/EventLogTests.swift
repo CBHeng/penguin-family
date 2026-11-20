@@ -16,18 +16,18 @@ struct EventLogTests {
         #expect(try await log.recent(limit: 10).isEmpty)
     }
 
-    @Test func recordsTapWithPenguinAndTime() async throws {
+    @Test func recordsTapWithCharacterAndTime() async throws {
         let (_, log) = try await Self.open()
         let when = Date(timeIntervalSince1970: 1_000)
-        #expect(await log.record(.ownerTapped, penguinID: "penguin-a", at: when))
+        #expect(await log.record(.ownerTapped, characterID: "penguin-a", at: when))
         let records = try await log.recent(limit: 10)
-        #expect(records == [LoggedEvent(occurredAt: when, kind: .ownerTapped, penguinID: "penguin-a")])
+        #expect(records == [LoggedEvent(occurredAt: when, kind: .ownerTapped, characterID: "penguin-a")])
     }
 
     @Test func recentIsNewestFirstAndLimited() async throws {
         let (_, log) = try await Self.open()
         for second in [3.0, 1.0, 2.0] {
-            await log.record(.ownerTapped, penguinID: nil, at: Date(timeIntervalSince1970: second))
+            await log.record(.ownerTapped, characterID: nil, at: Date(timeIntervalSince1970: second))
         }
         let times = try await log.recent(limit: 2).map(\.occurredAt.timeIntervalSince1970)
         #expect(times == [3, 2])
@@ -35,7 +35,7 @@ struct EventLogTests {
 
     @Test func savedRecordsAreVisibleToAnotherLog() async throws {
         let (container, log) = try await Self.open()
-        await log.record(.ownerTapped, penguinID: "penguin-a")
+        await log.record(.ownerTapped, characterID: "penguin-a")
         // 已存檔：同一個資料庫另開一個也讀得到
         let other = await EventLog.open(container)
         #expect(try await other.recent(limit: 10).count == 1)
@@ -47,7 +47,7 @@ struct EventLogTests {
     }
 
     @Test func unknownKindReadsAsNil() {
-        let record = EventRecord(kind: .ownerTapped, penguinID: nil, occurredAt: .now)
+        let record = EventRecord(kind: .ownerTapped, characterID: nil, occurredAt: .now)
         record.kindRawValue = "somethingFromFutureVersion"
         #expect(record.kind == nil)
     }

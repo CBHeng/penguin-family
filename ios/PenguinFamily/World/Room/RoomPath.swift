@@ -1,4 +1,4 @@
-/// 地板上的一格（整數）。企鵝走路時站在格子中心，沿格線（i 軸、j 軸）一格一格走。
+/// 地板上的一格（整數）。角色移動時站在格子中心，沿格線（i 軸、j 軸）一格一格走。
 nonisolated struct Tile: Hashable, Sendable {
     var i: Int
     var j: Int
@@ -63,7 +63,7 @@ nonisolated struct RoomSpot: Equatable, Sendable {
 }
 
 nonisolated extension RoomLayout {
-    /// 企鵝站得上去的格子：在地板上，而且沒有家具。
+    /// 角色站得上去的格子：在地板上，而且沒有家具。
     func isWalkable(_ tile: Tile) -> Bool {
         let one = TileRect(x: tile.i, y: tile.j, width: 1, height: 1)
         return floor.contains(one) && !furniture.contains { $0.footprint.intersects(one) }
@@ -116,7 +116,20 @@ nonisolated extension RoomLayout {
         return spots.filter { isWalkable($0.tile) }
     }
 
-    /// 某一格（例如另一隻企鵝站的地方）四周緊鄰、站得上去的格子，與面向那一格的方向（閒晃「走去黏著另一隻」用）。
+    /// 一開始站的格子，給 `count` 隻（ADR 0009：一家有幾隻由名單決定）：先用箱庭的起點（`starts`），
+    /// 不夠時從第一個起點往外找最近、站得上去、還沒人用的格子（一樣近時依 i、j 排）。站得上去的格子不夠時給得比較少。
+    func startTiles(count: Int) -> [Tile] {
+        var tiles: [Tile] = []
+        for tile in starts where isWalkable(tile) && !tiles.contains(tile) && tiles.count < count { tiles.append(tile) }
+        guard tiles.count < count else { return tiles }
+        let origin = tiles.first ?? Tile(i: widthTiles / 2, j: depthTiles / 2)
+        let nearby = stepCounts(from: origin)
+            .filter { !tiles.contains($0.key) }
+            .sorted { ($0.value, $0.key.i, $0.key.j) < ($1.value, $1.key.i, $1.key.j) }
+        return tiles + nearby.prefix(count - tiles.count).map(\.key)
+    }
+
+    /// 某一格（例如另一隻角色站的地方）四周緊鄰、站得上去的格子，與面向那一格的方向（閒晃「走去黏著另一隻」用）。
     func spots(around tile: Tile) -> [RoomSpot] {
         Step.allCases.compactMap { step in
             let spot = step.from(tile)
@@ -127,7 +140,7 @@ nonisolated extension RoomLayout {
     }
 }
 
-/// 在箱庭裡找路：沿格線走、繞過家具（A1 第 6 項），需要時也繞過另一隻企鵝（A1 第 12 項）。
+/// 在箱庭裡找路：沿格線走、繞過家具（A1 第 6 項），需要時也繞過另一隻角色（A1 第 12 項）。
 ///
 /// 先找最短的路；一樣短的路有好幾條時，挑轉彎最少的，看起來像有目標地走，不會一直左右拐。
 /// 還是一樣時，照 `Step.allCases` 的順序固定挑一條，同樣的起點與終點每次都走同一條路。
@@ -164,7 +177,7 @@ nonisolated struct RoomPath: Equatable, Sendable {
     var turns: Int { max(0, legs.count - 1) }
 
     /// 找一條路；起點或終點站不上去、或到不了時是 nil。起點等於終點時是只有一格的路。
-    /// `avoiding` 的格子當成站不上去（例如另一隻企鵝站的地方），起點除外；終點在裡面時是 nil。
+    /// `avoiding` 的格子當成站不上去（例如另一隻角色站的地方），起點除外；終點在裡面時是 nil。
     static func find(in room: RoomLayout, from start: Tile, to goal: Tile, avoiding: Set<Tile> = []) -> RoomPath? {
         guard room.isWalkable(start), room.isWalkable(goal), start == goal || !avoiding.contains(goal) else { return nil }
         if start == goal { return RoomPath(tiles: [start]) }

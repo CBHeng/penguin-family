@@ -3,13 +3,13 @@ import Foundation
 import Testing
 @testable import PenguinFamily
 
-/// 向量角色包（ADR 0007）：讀檔與檢查、正面的姿勢連動、部件畫成貼圖、角色包一起載入。
+/// 向量角色包（ADR 0007）：讀檔與檢查、部件照姿勢動與翻轉（ADR 0009）、部件畫成貼圖、角色包一起載入。
 /// 用一隻 20×20 的假角色：身體、手、頭各一個橢圓，肚子只畫在身體裡（肚子的陰影要在身體裡、也要在肚子裡），頭上有一條曲線。
 /// `walkingJSON` 再加上斜向：左前、左後畫好，右前、右後翻轉。
 struct VectorRigTests {
     static let json = """
     {"format": 1, "outline": {"color": "#525e70", "width": 0.75},
-     "facings": {"front": {"canvas": {"width": 20, "height": 20}, "feet": {"x": 10, "y": 18}, "neckY": 10,
+     "facings": {"front": {"canvas": {"width": 20, "height": 20}, "feet": {"x": 10, "y": 18},
        "drawOrder": ["body", "arm", "head"],
        "parts": {
          "body": {"pivot": {"x": 10, "y": 18}, "silhouette": [{"ellipse": [10, 14, 6, 4]}],
@@ -26,7 +26,7 @@ struct VectorRigTests {
     """
 
     /// 斜向的假角色：兩隻腳、身體、手、頭、帽子各一個橢圓，腳底在 (10, 18)，身體的轉軸在 (11, 18)。
-    static func oblique(forwardY: Int, leftFoot: String, armSide: Int) -> String {
+    static func oblique() -> String {
         func part(_ name: String, _ e: [Double], pivot: (Double, Double), color: String = "#baccdc") -> String {
             let shape = "{\"ellipse\": [\(e.map { "\($0)" }.joined(separator: ", "))]}"
             return "\"\(name)\": {\"pivot\": {\"x\": \(pivot.0), \"y\": \(pivot.1)}, \"silhouette\": [\(shape)], "
@@ -42,14 +42,13 @@ struct VectorRigTests {
         ].joined(separator: ", ")
         return """
         {"canvas": {"width": 20, "height": 20}, "feet": {"x": 10, "y": 18},
-         "walk": {"forward": {"x": -2, "y": \(forwardY)}, "leftFoot": "\(leftFoot)", "armSide": \(armSide), "peek": {"farFoot": 1}},
          "drawOrder": ["farFoot", "nearFoot", "body", "arm", "head", "hat"], "parts": {\(parts)}}
         """
     }
 
     static let walkingJSON = String(json.dropLast(2)) + """
-    , "frontLeft": \(oblique(forwardY: 1, leftFoot: "farFoot", armSide: 1)),
-       "backLeft": \(oblique(forwardY: -1, leftFoot: "nearFoot", armSide: -1))},
+    , "frontLeft": \(oblique()),
+       "backLeft": \(oblique())},
      "mirrors": {
        "frontRight": {"of": "frontLeft", "drawOrder": ["farFoot", "nearFoot", "body", "arm", "hat", "head"],
                       "shift": {"hat": {"x": -4, "y": 0}}},
@@ -79,10 +78,9 @@ struct VectorRigTests {
         #expect(throws: VectorRigError.invalidColor("red")) {
             try Self.rig(Self.json.replacingOccurrences(of: "\"#26262c\"", with: "\"red\""))
         }
-        // 少了手：哈囉會動它，一定要有
-        #expect(throws: VectorRigError.missingPart("arm")) {
-            try Self.rig(Self.json.replacingOccurrences(of: "\"arm\": {", with: "\"wing\": {")
-                .replacingOccurrences(of: "\"body\", \"arm\", \"head\"", with: "\"body\", \"wing\", \"head\""))
+        // 沒有正面
+        #expect(throws: VectorRigError.invalidDirection("front")) {
+            try Self.rig(Self.json.replacingOccurrences(of: "\"front\": {", with: "\"frontLeft\": {"))
         }
         // drawOrder 沒有剛好列出每個部件
         #expect(throws: VectorRigError.invalidDirection("front")) {
@@ -99,9 +97,9 @@ struct VectorRigTests {
     }
 
     @Test func rejectsBrokenObliques() {
-        // 斜向少了怎麼走
-        #expect(throws: VectorRigError.invalidDirection("backLeft")) {
-            try Self.rig(Self.walkingJSON.replacingOccurrences(of: "\"leftFoot\": \"nearFoot\"", with: "\"leftFoot\": \"wing\""))
+        // 不認得的方向名稱
+        #expect(throws: VectorRigError.invalidDirection("left")) {
+            try Self.rig(Self.walkingJSON.replacingOccurrences(of: "\"backLeft\": {", with: "\"left\": {"))
         }
         // 翻轉的來源不存在
         #expect(throws: VectorRigError.invalidDirection("backRight")) {
@@ -113,61 +111,73 @@ struct VectorRigTests {
         }
     }
 
-    // MARK: - 正面的姿勢
+    // MARK: - 部件的姿勢（ADR 0009：不分物種，部件照姿勢以自己的轉軸動）
 
     static func apply(_ t: Affine2D?, _ x: Double, _ y: Double) -> (x: Double, y: Double) {
         (t ?? .identity).apply(x, y)
     }
 
+    static func transforms(_ rig: VectorRig, _ facing: Facing, _ parts: [String: PartPose] = [:]) throws -> [String: Affine2D] {
+        try #require(rig.frame(CharacterPose(facing: facing, parts: parts))).transforms
+    }
+
     @Test func restMovesNothing() throws {
-        let transforms = try Self.rig().front.frontTransforms(.rest)
+        let transforms = try Self.transforms(try Self.rig(), .front)
         #expect(Set(transforms.keys) == ["body", "arm", "head"])
         for t in transforms.values { #expect(t == .identity) }
     }
 
     @Test func partsTurnAroundTheirPivots() throws {
-        let front = try Self.rig().front
-        let t = front.frontTransforms(RigPose(headDegrees: -9, armDegrees: -140, squash: 1))
+        let t = try Self.transforms(try Self.rig(), .front, ["arm": PartPose(rotate: -140), "head": PartPose(rotate: -9)])
         let shoulder = Self.apply(t["arm"], 15, 12), neck = Self.apply(t["head"], 10, 10)
         #expect(abs(shoulder.x - 15) < 1e-12 && abs(shoulder.y - 12) < 1e-12)
         #expect(abs(neck.x - 10) < 1e-12 && abs(neck.y - 10) < 1e-12)
         // 手往畫面右上舉：手的中心（肩膀下方 2）轉 -140 度（逆時針）後在肩膀右上方
         let hand = Self.apply(t["arm"], 15, 14)
         #expect(hand.x > 15 && hand.y < 12)
+        #expect(t["body"] == .identity)                                          // 沒列到的部件在原位
     }
 
-    @Test func squashKeepsFeetAndMovesHeadAndArm() throws {
-        let front = try Self.rig().front
-        let t = front.frontTransforms(RigPose(headDegrees: 0, armDegrees: 0, squash: 0.9))
+    @Test func scaleKeepsThePivotAndMoveIsAddedAfter() throws {
+        let t = try Self.transforms(try Self.rig(), .front, [
+            "body": PartPose(scaleX: 1 / 0.9, scaleY: 0.9),
+            "head": PartPose(rotate: 90, x: 0, y: 0.8),
+        ])
         let feet = Self.apply(t["body"], 10, 18)
-        #expect(abs(feet.x - 10) < 1e-12 && abs(feet.y - 18) < 1e-12)       // 腳底不動
+        #expect(abs(feet.x - 10) < 1e-12 && abs(feet.y - 18) < 1e-12)           // 以轉軸（腳底）縮放：腳底不動
+        let top = Self.apply(t["body"], 10, 8)
+        #expect(abs(top.y - (18 - 10 * 0.9)) < 1e-12)                            // 身體變矮
         let neck = Self.apply(t["head"], 10, 10)
-        #expect(abs(neck.y - (10 + (18 - 10) * 0.1)) < 1e-12)                // 身體變矮，頭往下（不取整數）
-        let shoulder = Self.apply(t["arm"], 15, 12)
-        #expect(abs(shoulder.x - (15 + (15 - 10) * (1 / 0.9 - 1))) < 1e-12)  // 身體變寬，手往外
+        #expect(abs(neck.x - 10) < 1e-12 && abs(neck.y - 10.8) < 1e-12)         // 先以轉軸轉，再往下移
     }
 
-    // MARK: - 斜向的姿勢
+    @Test func anyPartNamesWork() throws {
+        // 不分物種：部件叫什麼都可以（例如沒有手、有鰭）
+        let finned = try Self.rig(Self.json.replacingOccurrences(of: "\"arm\"", with: "\"fin\""))
+        #expect(finned.front.drawOrder == ["body", "fin", "head"])
+        let t = try Self.transforms(finned, .front, ["fin": PartPose(rotate: 30)])
+        #expect(t["fin"] != .identity && t["body"] == .identity)
+    }
+
+    // MARK: - 斜向與翻轉
 
     @Test func eachObliqueHasALook() throws {
         let rig = try Self.rig(Self.walkingJSON)
         #expect(rig.look("frontLeft")?.mirror == nil && rig.look("frontLeft")?.source == "frontLeft")
         let right = try #require(rig.look("frontRight"))
         #expect(right.source == "frontLeft" && right.drawOrder.suffix(2) == ["hat", "head"])   // 帽子畫在頭後面
-        #expect(rig.walk("backRight")?.armSide == -1)                                          // 用來源的走法
         #expect(try Self.rig().look("frontLeft") == nil)                                       // 沒有斜向的角色包
     }
 
     @Test func obliqueRestMovesNothing() throws {
         let rig = try Self.rig(Self.walkingJSON)
-        let frame = try #require(rig.frame(.oblique(.frontLeft, .rest)))
+        let frame = try #require(rig.frame(CharacterPose(facing: .frontLeft)))
         #expect(Set(frame.transforms.keys) == Set(frame.look.drawOrder))
         for t in frame.transforms.values { #expect(t == .identity) }
     }
 
     @Test func mirroredFacingFlipsAroundTheFeet() throws {
-        let rig = try Self.rig(Self.walkingJSON)
-        let t = try #require(rig.frame(.oblique(.frontRight, .rest))).transforms
+        let t = try Self.transforms(try Self.rig(Self.walkingJSON), .frontRight)
         let body = Self.apply(t["body"], 11, 14)
         #expect(abs(body.x - 9) < 1e-12 && abs(body.y - 14) < 1e-12)           // 以腳底 x = 10 翻轉
         let hat = Self.apply(t["hat"], 13, 3)
@@ -175,43 +185,18 @@ struct VectorRigTests {
         #expect((t["head"]?.a ?? 1) == -1)
     }
 
-    @Test func walkingSwaysTheUpperBodyAndOpensTheArm() throws {
+    @Test func mirroredFacingUsesTheSourcePoseThenFlips() throws {
+        // 翻轉的方向用來源的姿勢：右前的手 = 左前的手再以腳底翻轉
         let rig = try Self.rig(Self.walkingJSON)
-        var pose = VectorWalkPose(swayDegrees: 10, dip: 0.5, armOpenDegrees: 20, armDy: 0.25)
-        pose.feet["nearFoot"] = .init(dx: -1, dy: 0.5)
-        let t = try #require(rig.frame(.oblique(.frontLeft, pose))).transforms
-        let base = Self.apply(t["body"], 11, 18)
-        #expect(abs(base.x - 11) < 1e-12 && abs(base.y - 18.5) < 1e-12)       // 軸不動，只往下沉
-        let top = Self.apply(t["head"], 11, 3)
-        #expect(top.x > 11 + 2)                                                  // 順時針傾斜：上面往右
-        let swayOnly = Self.apply(t["body"], 16, 14)
-        let hand = Self.apply(t["arm"], 16, 14)
-        #expect(hand.x > swayOnly.x)                                             // 手在右側，往外是往右
-        let foot = Self.apply(t["nearFoot"], 13, 18)
-        #expect(foot.x == 12 && foot.y == 18.5)                                  // 腳只平移
-        #expect(t["farFoot"] == .identity)
-    }
-
-    @Test func gaitPoseIsSmoothAndLandsAtTheRightTime() throws {
-        let walk = try #require(try Self.rig(Self.walkingJSON).walk("frontLeft"))
-        for (label, gait) in [("walk", Gait.standardWalk), ("trot", .standardTrot)] {
-            var last = gait.vectorPose(at: 0, walk: walk)
-            #expect(abs(last.dip - Double(gait.dip)) < 1e-12)                    // 換腳落地時最低
-            for k in 1...1000 {
-                let pose = gait.vectorPose(at: gait.cycle * Double(k) / 1000, walk: walk)
-                // 不整格跳：相鄰兩個時間點只差一點點
-                #expect(abs(pose.swayDegrees - last.swayDegrees) < 0.1 && abs(pose.dip - last.dip) < 0.05)
-                for (name, o) in pose.feet {
-                    let p = try #require(last.feet[name])
-                    #expect(abs(o.dx - p.dx) < 0.05 && abs(o.dy - p.dy) < 0.05, "\(label) \(name) at \(k)")
-                }
-                last = pose
-            }
-            // 四分之一個循環：身體往右傾到底，畫面左邊的腳抬起、在前後的正中間
-            let quarter = gait.vectorPose(at: gait.cycle / 4, walk: walk)
-            #expect(abs(quarter.swayDegrees - (gait.sway - gait.lean)) < 1e-9)   // 往左走，前傾是往左
-            #expect(abs((quarter.feet["farFoot"]?.dy ?? 0) + Double(gait.lift)) < 1e-9)
+        let pose: [String: PartPose] = ["arm": PartPose(rotate: 20, y: 0.5), "nearFoot": PartPose(x: -1, y: 0.5)]
+        let left = try Self.transforms(rig, .frontLeft, pose), right = try Self.transforms(rig, .frontRight, pose)
+        let flip = Affine2D(a: -1, b: 0, c: 0, d: 1, tx: 20, ty: 0)
+        for name in ["arm", "nearFoot", "body"] {
+            let want = flip * (left[name] ?? .identity), got = right[name] ?? .identity
+            #expect(abs(got.a - want.a) < 1e-12 && abs(got.tx - want.tx) < 1e-12 && abs(got.ty - want.ty) < 1e-12, "\(name)")
         }
+        let foot = Self.apply(left["nearFoot"], 13, 18)
+        #expect(foot.x == 12 && foot.y == 18.5)                                  // 只有位移時就是平移
     }
 
     // MARK: - 畫成貼圖
@@ -263,8 +248,7 @@ struct VectorRigTests {
         #expect(Set(gray.facings.keys) == Set(rig.facings.keys) && Set(gray.mirrors.keys) == Set(rig.mirrors.keys))
         for (name, facing) in rig.facings {
             let g = try #require(gray.facings[name])
-            #expect(g.canvas == facing.canvas && g.feet == facing.feet && g.neckY == facing.neckY && g.drawOrder == facing.drawOrder)
-            #expect((g.walk != nil) == (facing.walk != nil))
+            #expect(g.canvas == facing.canvas && g.feet == facing.feet && g.drawOrder == facing.drawOrder)
             for (partName, part) in facing.parts {
                 let p = try #require(g.parts[partName])
                 #expect(p.pivot == part.pivot && p.silhouette == part.silhouette, "\(name).\(partName)")
@@ -280,8 +264,8 @@ struct VectorRigTests {
     // MARK: - 角色包
 
     @Test func packLoadsItsVector() throws {
-        let root = try PenguinDisplayTests.makeRoot(["a": Self.json])
+        let root = try CharacterDisplayTests.makeRoot(["a": Self.json])
         let family = CharacterPackLibrary.loadFamily(in: root)
-        #expect(family[0]?.vector.front.canvas == VectorRig.Size(width: 20, height: 20))
+        #expect(family[0].character?.vector.front.canvas == VectorRig.Size(width: 20, height: 20))
     }
 }

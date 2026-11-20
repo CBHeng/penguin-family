@@ -69,6 +69,7 @@ API 金鑰、權杖、密碼、憑證與私鑰只留在本機被 `.gitignore` �
 | 寫台詞、行為、人設提示 | [docs/characters/bible.md](docs/characters/bible.md)、[語氣底線](.claude/rules/character-voice.md) |
 | 碰聊天、AI、記憶、後端、權限 | [安全與隱私底線](.claude/rules/safety-privacy.md) |
 | 想質疑或推翻技術、資料、造型的決定 | [docs/adr/README.md](docs/adr/README.md)（索引，只看「現行」） |
+| 加新的動物或動作、改名單或動作資料的格式 | [ADR 0009](docs/adr/0009-characters-species-motion-data.md)、[docs/research/multi-species.md](docs/research/multi-species.md)、[程式地圖的「角色不分物種」](docs/code-map.md#角色不分物種adr-0009) |
 | 想知道某個做法是怎麼演變來的、為什麼放棄舊做法 | [docs/history/timeline.md](docs/history/timeline.md) |
 | 重新評估素材工具、引擎或繪圖方式 | [docs/research/asset-and-engine.md](docs/research/asset-and-engine.md)、[docs/research/rendering-performance.md](docs/research/rendering-performance.md) |
 | 碰 AI 費用、法規、上架議題 | [docs/research/compliance-and-ai.md](docs/research/compliance-and-ai.md) |

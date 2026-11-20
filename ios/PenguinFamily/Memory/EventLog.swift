@@ -33,10 +33,10 @@ actor EventLog {
         }
     }
 
-    /// 記下一件事並存檔。失敗只寫日誌，不影響企鵝；回傳是否成功。
+    /// 記下一件事並存檔。失敗只寫日誌，不影響角色；回傳是否成功。
     @discardableResult
-    func record(_ kind: EventKind, penguinID: String?, at date: Date = .now) -> Bool {
-        modelContext.insert(EventRecord(kind: kind, penguinID: penguinID, occurredAt: date))
+    func record(_ kind: EventKind, characterID: String?, at date: Date = .now) -> Bool {
+        modelContext.insert(EventRecord(kind: kind, characterID: characterID, occurredAt: date))
         do {
             try modelContext.save()
             return true
@@ -52,7 +52,7 @@ actor EventLog {
         var descriptor = FetchDescriptor<EventRecord>(sortBy: [SortDescriptor(\.occurredAt, order: .reverse)])
         descriptor.fetchLimit = limit
         return try modelContext.fetch(descriptor).map {
-            LoggedEvent(occurredAt: $0.occurredAt, kind: $0.kind, penguinID: $0.penguinID)
+            LoggedEvent(occurredAt: $0.occurredAt, kind: $0.kind, characterID: $0.penguinID)
         }
     }
 
@@ -65,5 +65,5 @@ nonisolated struct LoggedEvent: Equatable, Sendable {
     let occurredAt: Date
     /// 這個版本不認得的種類是 nil。
     let kind: EventKind?
-    let penguinID: String?
+    let characterID: String?
 }

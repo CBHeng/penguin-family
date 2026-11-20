@@ -3,38 +3,48 @@ import Testing
 @testable import PenguinFamily
 
 /// 畫面準備（ADR 0008）：要畫什麼與順序、內插、姿勢、點到哪一隻、拖曳、捏合、閒置後鏡頭回去、繪製清單。
-/// 快照由測試自己做；用屋內箱庭與 `VectorRigTests` 的 20×20 假角色（有斜向，腳底在 (10, 18)）。
+/// 快照由測試自己做；用屋內箱庭、`VectorRigTests` 的 20×20 假角色（有斜向，腳底在 (10, 18)）與 `MotionClipTests` 的動作資料。
 @MainActor
 struct FrameBuilderTests {
     typealias Activity = SimulationSnapshot.Activity
 
     /// 後台名單的兩隻。
-    static let ids = [PenguinID("first"), PenguinID("second")]
-    /// 和 `GameView.startPositions` 相同：第一隻腳底在 (192, 136)，第二隻在 (224, 136)。
+    static let ids = [CharacterID("first"), CharacterID("second")]
+    /// 屋內的前兩個起點：第一隻腳底在 (192, 136)，第二隻在 (224, 136)。
     static let positions = [TilePosition(i: 4.5, j: 4.5), TilePosition(i: 5.5, j: 3.5)]
     static let iso = IsoProjection(room: .indoor)
 
-    /// iPhone 17 直拿：402×874pt、@3x。`withCharacter[i]` 為 false 的那隻沒有角色包；`rig` 預設是有斜向的假角色。
-    static func builder(withCharacter: [Bool] = [true, true], motions: [PenguinMotions] = [.standard, .standard],
-                        rig: VectorRig? = nil) throws -> FrameBuilder {
+    /// 假角色的動作資料：哈囉、慢與快的步態（`MotionClipTests.json`）。
+    nonisolated static let motions = try! MotionClipTests.motions()
+
+    /// iPhone 17 直拿：402×874pt、@3x。`withCharacter[i]` 為 false 的那隻沒有角色包（和 App 一樣換成替身）；
+    /// `rig` 預設是有斜向的假角色。
+    static func builder(withCharacter: [Bool] = [true, true], motions: [CharacterMotions] = [motions, motions],
+                        rig: VectorRig? = nil, species: [Species] = [.penguin, .penguin]) throws -> FrameBuilder {
         let rig = try rig ?? VectorRigTests.rig(VectorRigTests.walkingJSON)
-        let cast = (0..<2).map { FrameBuilder.CastMember(id: ids[$0], vector: withCharacter[$0] ? rig : nil, motions: motions[$0]) }
+        let family = (0..<2).map { i in
+            FamilyMember(id: ids[i], species: species[i],
+                         character: withCharacter[i] ? LoadedCharacter(id: ids[i].rawValue, vector: rig, motions: motions[i]) : nil)
+        }
+        let cast = RoomScene.Member.cast(family, defaultWander: nil).map {
+            FrameBuilder.CastMember(id: $0.id, vector: $0.vector, motions: $0.motions)
+        }
         let builder = FrameBuilder(room: .indoor, cast: cast)
         builder.resize(viewport: CGSize(width: 402, height: 874), displayScale: 3)
         return builder
     }
 
-    static func penguin(_ id: PenguinID, _ position: TilePosition, _ facing: Facing = .front,
-                        _ activity: Activity = .still) -> SimulationSnapshot.Penguin {
-        SimulationSnapshot.Penguin(id: id, position: position, facing: facing, activity: activity)
+    static func character(_ id: CharacterID, _ position: TilePosition, _ facing: Facing = .front,
+                        _ activity: Activity = .still) -> SimulationSnapshot.Character {
+        SimulationSnapshot.Character(id: id, position: position, facing: facing, activity: activity)
     }
 
-    static func snapshot(_ penguins: [SimulationSnapshot.Penguin], tick: Int = 0) -> SimulationSnapshot {
-        SimulationSnapshot(tick: tick, penguins: penguins, isActive: false, wakeAt: nil)
+    static func snapshot(_ characters: [SimulationSnapshot.Character], tick: Int = 0) -> SimulationSnapshot {
+        SimulationSnapshot(tick: tick, characters: characters, isActive: false, wakeAt: nil)
     }
 
     /// 兩隻站在 `positions`。
-    static let standing = snapshot(zip(ids, positions).map { penguin($0, $1) })
+    static let standing = snapshot(zip(ids, positions).map { character($0, $1) })
 
     /// 準備一格；沒給 `time` 時畫最新快照的時間點。
     @discardableResult
@@ -43,8 +53,8 @@ struct FrameBuilderTests {
         builder.build(previous: previous, current: current, at: time ?? current.time, now: now)
     }
 
-    static func sprite(_ frame: FrameBuilder.Frame, _ id: PenguinID) -> FrameBuilder.Sprite? {
-        frame.sprites.first { $0.key == .penguin(id) }
+    static func sprite(_ frame: FrameBuilder.Frame, _ id: CharacterID) -> FrameBuilder.Sprite? {
+        frame.sprites.first { $0.key == .character(id) }
     }
 
     /// 箱庭圖上的一點在畫面上的位置（pt）。
@@ -54,15 +64,23 @@ struct FrameBuilderTests {
     }
 
     /// 站在 `position` 的企鵝腳底上方 3 個單位（在牠的圖裡）在畫面上的位置。
-    static func onPenguin(_ builder: FrameBuilder, at position: TilePosition) throws -> CGPoint {
+    static func onCharacter(_ builder: FrameBuilder, at position: TilePosition) throws -> CGPoint {
         let feet = iso.feet(at: position)
         return try screenPoint(builder, x: feet.x, y: feet.y - 3)
     }
 
-    /// 假角色往某個方向走時，某一份步態在第幾秒的姿勢。
-    static func walking(_ gait: Gait, _ facing: Facing, at t: Double) throws -> VectorPose {
-        let walk = try #require(try VectorRigTests.rig(VectorRigTests.walkingJSON).walk(facing.rawValue))
-        return .oblique(facing, gait.vectorPose(at: t, walk: walk))
+    /// 假角色往某個方向移動時，片段在第幾秒的樣子（翻轉的方向用來源的片段）。
+    static func moving(_ pace: CharacterBehavior.Pace, _ facing: Facing, at t: Double,
+                       motions: CharacterMotions = motions) throws -> CharacterPose {
+        let source = try #require(try VectorRigTests.rig(VectorRigTests.walkingJSON).look(facing.rawValue)?.source)
+        let gait = motions.gait(for: pace)
+        return CharacterPose(facing: facing, parts: try #require(gait.clips[source]).poses(at: t, cycle: gait.cycle))
+    }
+
+    /// 哈囉第幾秒的樣子。
+    static func hello(at t: Double, motions: CharacterMotions = motions) throws -> CharacterPose {
+        let hello = try #require(motions.motion(named: "hello"))
+        return CharacterPose(facing: .front, parts: try #require(hello.clips["front"]).poses(at: t))
     }
 
     /// 灰色剪影的畫布大小（假角色是 20×20）。
@@ -70,7 +88,7 @@ struct FrameBuilderTests {
 
     // MARK: - 畫什麼
 
-    @Test func firstLookIsAtTheFirstPenguin() throws {
+    @Test func firstLookIsAtTheFirstCharacter() throws {
         // 作者 2026-11-19 決定：鏡頭優先看第一隻
         let builder = try Self.builder()
         Self.build(builder, Self.standing)
@@ -82,7 +100,7 @@ struct FrameBuilderTests {
 
     @Test func cameraLooksAtTheNextOneWhenTheFirstIsNotOnStage() throws {
         let builder = try Self.builder()
-        Self.build(builder, Self.snapshot([Self.penguin(Self.ids[1], Self.positions[1])]))
+        Self.build(builder, Self.snapshot([Self.character(Self.ids[1], Self.positions[1])]))
         #expect(builder.camera?.centerX == 224)
     }
 
@@ -96,7 +114,7 @@ struct FrameBuilderTests {
         // 床在企鵝後面（深度較小），先畫
         let bed = try #require(RoomLayout.indoor.furniture.firstIndex { $0.kind == .bed })
         let bedIndex = try #require(frame.sprites.firstIndex { $0.key == .furniture(bed) })
-        let penguinIndex = try #require(frame.sprites.firstIndex { $0.key == .penguin(Self.ids[0]) })
+        let penguinIndex = try #require(frame.sprites.firstIndex { $0.key == .character(Self.ids[0]) })
         #expect(bedIndex < penguinIndex)
     }
 
@@ -104,14 +122,14 @@ struct FrameBuilderTests {
         let builder = try Self.builder(withCharacter: [true, false])
         #expect(builder.rigs().count == 2)
         #expect(builder.polygons().count == 1 + RoomLayout.indoor.furniture.count)
-        var snapshots = stride(from: 0.0, through: HelloMotion.standard.duration, by: 0.05).map { t in
-            (Self.snapshot([Self.penguin(Self.ids[0], Self.positions[0], .front, .motion(.hello, since: 0)),
-                            Self.penguin(Self.ids[1], Self.positions[1])]), t)
+        var snapshots = stride(from: 0.0, through: Self.motions.motion(named: "hello")!.duration, by: 0.05).map { t in
+            (Self.snapshot([Self.character(Self.ids[0], Self.positions[0], .front, .motion(.hello, since: 0)),
+                            Self.character(Self.ids[1], Self.positions[1])]), t)
         }
         for facing in Facing.oblique {
             snapshots += stride(from: 0.0, through: 2, by: 0.1).map { t in
-                (Self.snapshot([Self.penguin(Self.ids[0], Self.positions[0], facing, .walking(.trot, elapsed: t)),
-                                Self.penguin(Self.ids[1], Self.positions[1], facing, .walking(.walk, elapsed: t))]), t)
+                (Self.snapshot([Self.character(Self.ids[0], Self.positions[0], facing, .moving(.fast, elapsed: t)),
+                                Self.character(Self.ids[1], Self.positions[1], facing, .moving(.slow, elapsed: t))]), t)
             }
         }
         for (snapshot, time) in snapshots {
@@ -121,7 +139,7 @@ struct FrameBuilderTests {
                 switch item {
                 case .polygons(let key):
                     #expect(builder.polygons()[key] != nil, "\(key) 畫不出來")
-                case .penguin(let id, let look, let parts):
+                case .character(let id, let look, let parts):
                     let facing = try #require(builder.rigs()[id]?.facings[look], "\(id.rawValue) 沒有 \(look) 的圖")
                     #expect(parts.allSatisfy { facing.parts[$0.name] != nil })
                 }
@@ -146,79 +164,90 @@ struct FrameBuilderTests {
         #expect(standIn.outline.color == VectorRig.placeholderOutline)
         #expect(Set(standIn.facings.keys) == Set(try VectorRigTests.rig(VectorRigTests.walkingJSON).facings.keys))
         let frame = Self.build(builder, Self.snapshot([
-            Self.penguin(Self.ids[1], TilePosition(i: 5.0, j: 3.5), .frontRight, .walking(.walk, elapsed: 1)),
+            Self.character(Self.ids[1], TilePosition(i: 5.0, j: 3.5), .frontRight, .moving(.slow, elapsed: 1)),
         ]))
-        #expect(Self.sprite(frame, Self.ids[1])?.pose == (try Self.walking(.standardWalk, .frontRight, at: 1)))   // 斜著走
+        #expect(Self.sprite(frame, Self.ids[1])?.pose == (try Self.moving(.slow, .frontRight, at: 1)))   // 斜著走，用借來的動作
         // 第一隻沒有、第二隻有時也一樣：替身借第二隻的形狀
         let flipped = try Self.builder(withCharacter: [false, true])
         #expect(flipped.rigs()[Self.ids[0]]?.outline.color == VectorRig.placeholderOutline)
         #expect(flipped.rigs()[Self.ids[0]]?.facings.count == standIn.facings.count)
     }
 
+    @Test func standInOnlyBorrowsFromTheSameSpecies() throws {
+        // ADR 0009：第二隻是別種動物、沒有角色包時，不借第一隻的形狀，用灰色剪影
+        let builder = try Self.builder(withCharacter: [true, false], species: [.penguin, Species("shark")])
+        #expect(builder.rigs()[Self.ids[1]]?.front.canvas == Self.placeholderCanvas)
+        let frame = Self.build(builder, Self.standing)
+        #expect(Self.sprite(frame, Self.ids[1])?.width == Self.placeholderCanvas.width)
+    }
+
     // MARK: - 姿勢
 
-    @Test func eachPenguinMovesWithItsOwnMotions() throws {
-        // 作者 2026-11-19 決定：怎麼動每隻各一份；改第二隻的數字，第一隻照舊
-        var quick = PenguinMotions.standard
-        quick.walk.cycle = 0.5
-        quick.hello.wave = 0.4
-        let builder = try Self.builder(motions: [.standard, quick])
+    @Test func eachCharacterMovesWithItsOwnMotions() throws {
+        // 作者 2026-11-19 決定：怎麼動每隻各一份；改第二隻的片段，第一隻照舊
+        var quick = Self.motions
+        quick.gaits.slow.cycle = 0.5
+        quick.motions["hello"]?.clips["front"] = MotionClip(tracks: ["arm": [MotionClipTests.key(0, 0), MotionClipTests.key(2, -40)]])
+        let builder = try Self.builder(motions: [Self.motions, quick])
         let hello = Self.build(builder, Self.snapshot([
-            Self.penguin(Self.ids[0], Self.positions[0], .front, .motion(.hello, since: 0)),
-            Self.penguin(Self.ids[1], Self.positions[1], .front, .motion(.hello, since: 0)),
+            Self.character(Self.ids[0], Self.positions[0], .front, .motion(.hello, since: 0)),
+            Self.character(Self.ids[1], Self.positions[1], .front, .motion(.hello, since: 0)),
         ]), at: 1)
-        #expect(Self.sprite(hello, Self.ids[0])?.pose == .front(HelloMotion.standard.pose(at: 1)))
-        #expect(Self.sprite(hello, Self.ids[1])?.pose == .front(quick.hello.pose(at: 1)))
+        #expect(Self.sprite(hello, Self.ids[0])?.pose == (try Self.hello(at: 1)))
+        #expect(Self.sprite(hello, Self.ids[1])?.pose == (try Self.hello(at: 1, motions: quick)))
+        #expect(Self.sprite(hello, Self.ids[1])?.pose?.parts["arm"]?.rotate == -20)
         let walk = Self.build(builder, Self.snapshot([
-            Self.penguin(Self.ids[0], Self.positions[0], .frontRight, .walking(.walk, elapsed: 1)),
-            Self.penguin(Self.ids[1], Self.positions[1], .frontRight, .walking(.walk, elapsed: 1)),
+            Self.character(Self.ids[0], Self.positions[0], .frontRight, .moving(.slow, elapsed: 1)),
+            Self.character(Self.ids[1], Self.positions[1], .frontRight, .moving(.slow, elapsed: 1)),
         ]))
-        #expect(Self.sprite(walk, Self.ids[0])?.pose == (try Self.walking(.standardWalk, .frontRight, at: 1)))
-        #expect(Self.sprite(walk, Self.ids[1])?.pose == (try Self.walking(quick.walk, .frontRight, at: 1)))
+        #expect(Self.sprite(walk, Self.ids[0])?.pose == (try Self.moving(.slow, .frontRight, at: 1)))
+        #expect(Self.sprite(walk, Self.ids[1])?.pose == (try Self.moving(.slow, .frontRight, at: 1, motions: quick)))
     }
 
     @Test func helloPoseFollowsTheTimeEveryFrame() throws {
         // ADR 0007：每一格照時間轉；ADR 0008：用畫的時間（比模擬晚一個節拍）
         let builder = try Self.builder()
-        let hello = Self.snapshot([Self.penguin(Self.ids[0], Self.positions[0], .front, .motion(.hello, since: 10))], tick: 316)
-        #expect(Self.sprite(Self.build(builder, hello, at: 10.5), Self.ids[0])?.pose == .front(HelloMotion.standard.pose(at: 0.5)))
-        #expect(Self.sprite(Self.build(builder, hello, at: 10.51), Self.ids[0])?.pose
-                == .front(HelloMotion.standard.pose(at: 10.51 - 10)))
-        #expect(Self.sprite(Self.build(builder, hello, at: 9.99), Self.ids[0])?.pose == .front(.rest))   // 還沒開始
+        let hello = Self.snapshot([Self.character(Self.ids[0], Self.positions[0], .front, .motion(.hello, since: 10))], tick: 316)
+        #expect(Self.sprite(Self.build(builder, hello, at: 10.5), Self.ids[0])?.pose == (try Self.hello(at: 0.5)))
+        #expect(Self.sprite(Self.build(builder, hello, at: 10.51), Self.ids[0])?.pose == (try Self.hello(at: 10.51 - 10)))
+        #expect(Self.sprite(Self.build(builder, hello, at: 9.99), Self.ids[0])?.pose == (try Self.hello(at: 0)))   // 還沒開始
         let still = try #require(Self.sprite(Self.build(builder, Self.standing), Self.ids[0]))
         // 角色畫布的腳底對到站的點：(192, 136) − (10, 18)
-        #expect(still.x == 182 && still.y == 118 && still.width == 20 && still.height == 20 && still.pose == .front(.rest))
+        #expect(still.x == 182 && still.y == 118 && still.width == 20 && still.height == 20 && still.pose == CharacterPose(facing: .front))
     }
 
     @Test func obliqueSpriteAlsoPutsTheFeetOnThePoint() throws {
         let builder = try Self.builder()
         let position = TilePosition(i: 5.0, j: 4.5)
-        let frame = Self.build(builder, Self.snapshot([Self.penguin(Self.ids[0], position, .frontRight, .walking(.walk, elapsed: 1))]))
+        let frame = Self.build(builder, Self.snapshot([Self.character(Self.ids[0], position, .frontRight, .moving(.slow, elapsed: 1))]))
         let sprite = try #require(Self.sprite(frame, Self.ids[0]))
         let feet = Self.iso.feet(at: position)
         #expect(sprite.x == feet.x - 10 && sprite.y == feet.y - 18)
-        #expect(sprite.pose == (try Self.walking(.standardWalk, .frontRight, at: 1)))
-        // 站著、等別隻讓路時是站姿
-        let still = Self.build(builder, Self.snapshot([Self.penguin(Self.ids[0], position, .backRight)]))
-        #expect(Self.sprite(still, Self.ids[0])?.pose == .oblique(.backRight, .rest))
+        #expect(sprite.pose == (try Self.moving(.slow, .frontRight, at: 1)))
+        // 站著、等別隻讓路時是站姿：每個部件在原位
+        let still = Self.build(builder, Self.snapshot([Self.character(Self.ids[0], position, .backRight)]))
+        #expect(Self.sprite(still, Self.ids[0])?.pose == CharacterPose(facing: .backRight))
+        // 這個方向沒有片段（快步只有左前的片段）：照樣移動，部件在原位
+        let noClip = Self.build(builder, Self.snapshot([Self.character(Self.ids[0], position, .backLeft, .moving(.fast, elapsed: 1))]))
+        #expect(Self.sprite(noClip, Self.ids[0])?.pose == CharacterPose(facing: .backLeft))
     }
 
     @Test func placeholderSlidesAlongFacingTheFront() throws {
         // 灰色剪影沒有斜向：面向鏡頭平移
         let builder = try Self.builder(withCharacter: [false, false])
         let frame = Self.build(builder, Self.snapshot([
-            Self.penguin(Self.ids[0], TilePosition(i: 5.5, j: 4.5), .frontRight, .walking(.walk, elapsed: 2)),
+            Self.character(Self.ids[0], TilePosition(i: 5.5, j: 4.5), .frontRight, .moving(.slow, elapsed: 2)),
         ]))
         let sprite = try #require(Self.sprite(frame, Self.ids[0]))
-        #expect(sprite.pose == .front(.rest) && sprite.width == Self.placeholderCanvas.width)
+        #expect(sprite.pose == CharacterPose(facing: .front) && sprite.width == Self.placeholderCanvas.width)
     }
 
     @Test func rigWithoutObliquesFacesTheFrontWhileWalking() throws {
         let builder = try Self.builder(rig: try VectorRigTests.rig())               // 只有正面的假角色
         let frame = Self.build(builder, Self.snapshot([
-            Self.penguin(Self.ids[0], TilePosition(i: 5.0, j: 4.5), .frontRight, .walking(.walk, elapsed: 1)),
+            Self.character(Self.ids[0], TilePosition(i: 5.0, j: 4.5), .frontRight, .moving(.slow, elapsed: 1)),
         ]))
-        #expect(Self.sprite(frame, Self.ids[0])?.pose == .front(.rest))
+        #expect(Self.sprite(frame, Self.ids[0])?.pose == CharacterPose(facing: .front))
     }
 
     // MARK: - 內插（ADR 0008）
@@ -226,35 +255,35 @@ struct FrameBuilderTests {
     @Test func interpolatesBetweenTwoSnapshots() throws {
         let builder = try Self.builder()
         let step = 1.0 / Double(Simulation.ticksPerSecond)
-        let before = Self.snapshot([Self.penguin(Self.ids[0], TilePosition(i: 5.0, j: 4.5), .frontRight,
-                                                 .walking(.walk, elapsed: 1))], tick: 30)
-        let after = Self.snapshot([Self.penguin(Self.ids[0], TilePosition(i: 5.0 + step / 2, j: 4.5), .frontRight,
-                                                .walking(.walk, elapsed: 1 + step))], tick: 31)
+        let before = Self.snapshot([Self.character(Self.ids[0], TilePosition(i: 5.0, j: 4.5), .frontRight,
+                                                 .moving(.slow, elapsed: 1))], tick: 30)
+        let after = Self.snapshot([Self.character(Self.ids[0], TilePosition(i: 5.0 + step / 2, j: 4.5), .frontRight,
+                                                .moving(.slow, elapsed: 1 + step))], tick: 31)
         let time = before.time + step / 2                                          // 兩份快照中間
         let sprite = try #require(Self.sprite(Self.build(builder, after, previous: before, at: time), Self.ids[0]))
         let alpha = (time - before.time) / (after.time - before.time)
         let feet = Self.iso.feet(at: TilePosition(i: 5.0 + step / 2 * alpha, j: 4.5))
         #expect(abs(sprite.x - (feet.x - 10)) < 1e-9 && abs(sprite.y - (feet.y - 18)) < 1e-9)
-        #expect(sprite.pose == (try Self.walking(.standardWalk, .frontRight, at: 1 + (1 + step - 1) * alpha)))
+        #expect(sprite.pose == (try Self.moving(.slow, .frontRight, at: 1 + (1 + step - 1) * alpha)))
     }
 
     @Test func holdsTheLatestSnapshotWhenTheSimulationFallsBehind() throws {
         let builder = try Self.builder()
-        let before = Self.snapshot([Self.penguin(Self.ids[0], TilePosition(i: 5.0, j: 4.5))], tick: 30)
-        let after = Self.snapshot([Self.penguin(Self.ids[0], TilePosition(i: 5.1, j: 4.5))], tick: 31)
+        let before = Self.snapshot([Self.character(Self.ids[0], TilePosition(i: 5.0, j: 4.5))], tick: 30)
+        let after = Self.snapshot([Self.character(Self.ids[0], TilePosition(i: 5.1, j: 4.5))], tick: 31)
         let late = try #require(Self.sprite(Self.build(builder, after, previous: before, at: 5), Self.ids[0]))
         #expect(abs(late.x - (Self.iso.feet(at: TilePosition(i: 5.1, j: 4.5)).x - 10)) < 1e-9)   // 不往前猜，停在最新的
     }
 
     @Test func newcomersAndRestartedWalksUseTheLatestSnapshot() throws {
         let builder = try Self.builder()
-        let before = Self.snapshot([Self.penguin(Self.ids[0], Self.positions[0], .frontRight, .walking(.walk, elapsed: 3))], tick: 30)
+        let before = Self.snapshot([Self.character(Self.ids[0], Self.positions[0], .frontRight, .moving(.slow, elapsed: 3))], tick: 30)
         let after = Self.snapshot([
-            Self.penguin(Self.ids[0], Self.positions[0], .backLeft, .walking(.walk, elapsed: 0)),   // 重新起步：步態不往回算
-            Self.penguin(Self.ids[1], Self.positions[1]),                                           // 剛上台：沒有上一份
+            Self.character(Self.ids[0], Self.positions[0], .backLeft, .moving(.slow, elapsed: 0)),   // 重新起步：步態不往回算
+            Self.character(Self.ids[1], Self.positions[1]),                                           // 剛上台：沒有上一份
         ], tick: 31)
         let frame = Self.build(builder, after, previous: before, at: before.time + 0.5 / Double(Simulation.ticksPerSecond))
-        #expect(Self.sprite(frame, Self.ids[0])?.pose == (try Self.walking(.standardWalk, .backLeft, at: 0)))
+        #expect(Self.sprite(frame, Self.ids[0])?.pose == (try Self.moving(.slow, .backLeft, at: 0)))
         #expect(Self.sprite(frame, Self.ids[1])?.x == Self.iso.feet(at: Self.positions[1]).x - 10)
     }
 
@@ -273,8 +302,8 @@ struct FrameBuilderTests {
         let builder = try Self.builder()
         let list = try #require(Self.build(builder, Self.standing).drawList)
         let transform = try #require(builder.viewTransform)
-        guard case .penguin(_, let look, let parts)? = list.items.first(where: {
-            if case .penguin(Self.ids[0], _, _) = $0 { return true }
+        guard case .character(_, let look, let parts)? = list.items.first(where: {
+            if case .character(Self.ids[0], _, _) = $0 { return true }
             return false
         }) else { Issue.record("第一隻不在繪製清單裡"); return }
         #expect(look == "front")
@@ -286,33 +315,33 @@ struct FrameBuilderTests {
 
     // MARK: - 點擊
 
-    @Test func tapFindsWhichPenguin() throws {
+    @Test func tapFindsWhichCharacter() throws {
         let builder = try Self.builder(withCharacter: [true, false])
         Self.build(builder, Self.standing)
-        #expect(builder.penguin(at: try Self.onPenguin(builder, at: Self.positions[0])) == Self.ids[0])
-        #expect(builder.penguin(at: try Self.onPenguin(builder, at: Self.positions[1])) == Self.ids[1])   // 替身也點得到
-        #expect(builder.penguin(at: .zero) == nil)
+        #expect(builder.character(at: try Self.onCharacter(builder, at: Self.positions[0])) == Self.ids[0])
+        #expect(builder.character(at: try Self.onCharacter(builder, at: Self.positions[1])) == Self.ids[1])   // 替身也點得到
+        #expect(builder.character(at: .zero) == nil)
     }
 
-    @Test func frontPenguinWinsWhenOverlapping() throws {
+    @Test func frontCharacterWinsWhenOverlapping() throws {
         // 站在同一點：後上台的畫在後面，也就是在前面
         let same = try Self.builder()
-        Self.build(same, Self.snapshot(Self.ids.map { Self.penguin($0, Self.positions[0]) }))
-        #expect(same.penguin(at: try Self.onPenguin(same, at: Self.positions[0])) == Self.ids[1])
+        Self.build(same, Self.snapshot(Self.ids.map { Self.character($0, Self.positions[0]) }))
+        #expect(same.character(at: try Self.onCharacter(same, at: Self.positions[0])) == Self.ids[1])
         // 第一隻離主人比較近（畫面比較下方）：牠在前面
         let nearer = try Self.builder()
         let near = TilePosition(i: 4.7, j: 4.7)
-        Self.build(nearer, Self.snapshot([Self.penguin(Self.ids[0], near), Self.penguin(Self.ids[1], Self.positions[0])]))
+        Self.build(nearer, Self.snapshot([Self.character(Self.ids[0], near), Self.character(Self.ids[1], Self.positions[0])]))
         #expect(Self.iso.feet(at: near).y > Self.iso.feet(at: Self.positions[0]).y)
-        #expect(nearer.penguin(at: try Self.onPenguin(nearer, at: Self.positions[0])) == Self.ids[0])
+        #expect(nearer.character(at: try Self.onCharacter(nearer, at: Self.positions[0])) == Self.ids[0])
     }
 
-    @Test func backstagePenguinIsNotDrawnButItsImagesAreReady() throws {
+    @Test func backstageCharacterIsNotDrawnButItsImagesAreReady() throws {
         let builder = try Self.builder()
-        let frame = Self.build(builder, Self.snapshot([Self.penguin(Self.ids[0], Self.positions[0])]))   // 第二隻在後台
+        let frame = Self.build(builder, Self.snapshot([Self.character(Self.ids[0], Self.positions[0])]))   // 第二隻在後台
         #expect(Self.sprite(frame, Self.ids[1]) == nil)
         #expect(builder.rigs()[Self.ids[1]] != nil)                                  // 造型先準備好，上台時不用再載入
-        #expect(builder.penguin(at: try Self.onPenguin(builder, at: Self.positions[1])) == nil)
+        #expect(builder.character(at: try Self.onCharacter(builder, at: Self.positions[1])) == nil)
         #expect(builder.camera?.centerX == 192)                                      // 鏡頭只看台上的那一隻
     }
 
@@ -332,13 +361,13 @@ struct FrameBuilderTests {
         #expect(woke == 3)                                // 有變化就叫醒遊戲迴圈
     }
 
-    @Test func dragStartingOnEitherPenguinDoesNotScroll() throws {
+    @Test func dragStartingOnEitherCharacterDoesNotScroll() throws {
         for (id, position) in zip(Self.ids, Self.positions) {
             let builder = try Self.builder()
             Self.build(builder, Self.standing)
             let before = builder.camera
             builder.panChanged(translation: CGSize(width: 30, height: 0),
-                               startLocation: try Self.onPenguin(builder, at: position), now: 0)
+                               startLocation: try Self.onCharacter(builder, at: position), now: 0)
             #expect(builder.camera == before, "從 \(id.rawValue) 身上開始拖")
         }
     }
@@ -356,7 +385,7 @@ struct FrameBuilderTests {
 
     // MARK: - 閒置後鏡頭回去
 
-    @Test func cameraReturnsToTheFirstPenguinAfterIdle() throws {
+    @Test func cameraReturnsToTheFirstCharacterAfterIdle() throws {
         let builder = try Self.builder()
         Self.build(builder, Self.standing, now: 99)
         let home = try #require(builder.camera)
@@ -396,9 +425,9 @@ struct FrameBuilderTests {
         // 沙發佔 i = 7、j = 6～8，最靠近主人的角很低；站在它右前方 (8, 7) 的企鵝要畫在沙發前面
         let sofa = try #require(RoomLayout.indoor.furniture.firstIndex { $0.kind == .sofa })
         func order(at position: TilePosition) throws -> (sofa: Int, penguin: Int) {
-            let frame = Self.build(try Self.builder(), Self.snapshot([Self.penguin(Self.ids[0], position)]))
+            let frame = Self.build(try Self.builder(), Self.snapshot([Self.character(Self.ids[0], position)]))
             return (try #require(frame.sprites.firstIndex { $0.key == .furniture(sofa) }),
-                    try #require(frame.sprites.firstIndex { $0.key == .penguin(Self.ids[0]) }))
+                    try #require(frame.sprites.firstIndex { $0.key == .character(Self.ids[0]) }))
         }
         let beside = try order(at: Tile(i: 8, j: 7).center)
         #expect(beside.penguin > beside.sofa)
