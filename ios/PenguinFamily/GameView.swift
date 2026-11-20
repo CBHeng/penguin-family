@@ -40,18 +40,19 @@ struct GameView: View {
     /// 台上有誰，依上台先後。
     @State private var onStage: [PenguinID]
 
+    /// `wander` 是 App 裡的預設閒晃；角色包帶了自己的 `wander.json` 的那隻用自己的（作者 2026-11-19 決定兩隻各自獨立）。
     init(family: [LoadedCharacter?], wander: WanderConfig?, events: EventLog?) {
         self.events = events
         let members = family.enumerated().map { index, character in
             Member(id: PenguinID(character: character, index: index), character: character,
-                   wander: wander.map { WanderRoutine(config: $0, room: Self.room) },
+                   wander: (character?.wander ?? wander).map { WanderRoutine(config: $0, room: Self.room) },
                    position: Self.startPositions[index % Self.startPositions.count])
         }
         _members = State(initialValue: members)
         _onStage = State(initialValue: Self.initialStage(members.map(\.id)))
     }
 
-    /// 一開始誰在台上：一家每一隻（A1 第 12 項）。第二隻的美術好之前，台上是借第一隻形狀塗灰的替身。
+    /// 一開始誰在台上：一家每一隻（A1 第 12 項）。沒有角色包的那隻，台上是借另一隻形狀塗灰的替身。
     static func initialStage(_ family: [PenguinID]) -> [PenguinID] {
         family
     }
@@ -62,7 +63,7 @@ struct GameView: View {
                 .ignoresSafeArea()
             RoomView(
                 room: Self.room,
-                cast: members.map { .init(id: $0.id, vector: $0.character?.vector) },
+                cast: members.map { .init(id: $0.id, vector: $0.character?.vector, motions: $0.character?.motions ?? .standard) },
                 penguins: onStage.compactMap { id in
                     members.first { $0.id == id }.map {
                         .init(id: id, position: $0.position, intent: $0.behavior.intent, serial: $0.behavior.serial)

@@ -3,6 +3,7 @@ import Testing
 @testable import PenguinFamily
 
 /// 拿真實角色包比對 Swift 和私有素材 repo 的 `vector.js`：哈囉每一格、斜向每個步態抽樣的姿勢與每個部件的矩陣都要相同。
+/// 動作的數字用那個角色包自己的 `motion.json`（每隻各一份）。
 /// 對照檔 `vector.golden.json` 由 `vector/export.js` 寫到測試用的角色包資料夾，不進 git；沒有時跳過。
 struct VectorPackParityTests {
     struct Golden: Decodable {
@@ -34,13 +35,18 @@ struct VectorPackParityTests {
         let walks: [Walk]?
     }
 
+    /// 這個角色包自己的動作細節（`motion.json`）：對照檔是照它算的，每隻各一份。
+    static func motions(_ pack: URL) throws -> PenguinMotions {
+        try PenguinMotions.decode(Data(contentsOf: pack.appending(path: "motion.json")))
+    }
+
     static func matches(_ t: Affine2D, _ want: [Double]) -> Bool {
         zip([t.a, t.b, t.c, t.d, t.tx, t.ty], want).allSatisfy { abs($0 - $1) < 1e-9 }
     }
 
     private final class BundleToken {}
 
-    /// 測試用的角色包裡有 `vector.json` 的資料夾，依名稱排序。角色 id 只從資料夾讀，不寫在程式裡。
+    /// 測試用的角色包裡有 `vector.json` 的資料夾，照 App 的順序（`family.json`，沒有就依名稱）。角色 id 只從資料夾讀，不寫在程式裡。
     static let allPacks: [URL] = {
         let bundle = Bundle(for: BundleToken.self)
         guard let root = bundle.url(forResource: "CharacterPacks", withExtension: "bundle") else { return [] }
@@ -55,11 +61,12 @@ struct VectorPackParityTests {
     @Test(.enabled(if: !packs.isEmpty, "沒有向量對照檔（乾淨 clone），跳過"), arguments: packs)
     func helloMatchesJSFrameByFrame(pack: URL) throws {
         let rig = try VectorRig.decode(Data(contentsOf: pack.appending(path: "vector.json")))
+        let hello = try Self.motions(pack).hello
         let golden = try JSONDecoder().decode(Golden.self, from: Data(contentsOf: pack.appending(path: "vector.golden.json")))
         #expect(golden.motion == "hello")
-        #expect(golden.frames.count == Int((HelloMotion.duration * golden.framesPerSecond).rounded()))
+        #expect(golden.frames.count == Int((hello.duration * golden.framesPerSecond).rounded()))
         for (i, frame) in golden.frames.enumerated() {
-            let pose = HelloMotion.pose(at: frame.t)
+            let pose = hello.pose(at: frame.t)
             #expect(abs(pose.headDegrees - frame.headDegrees) < 1e-12, "frame \(i) head")
             #expect(abs(pose.armDegrees - frame.armDegrees) < 1e-12, "frame \(i) arm")
             #expect(abs(pose.squash - frame.squash) < 1e-12, "frame \(i) squash")
@@ -76,17 +83,18 @@ struct VectorPackParityTests {
     @Test(.enabled(if: !packs.isEmpty, "沒有向量對照檔（乾淨 clone），跳過"), arguments: packs)
     func walkingMatchesJSFrameByFrame(pack: URL) throws {
         let rig = try VectorRig.decode(Data(contentsOf: pack.appending(path: "vector.json")))
+        let motions = try Self.motions(pack)
         let golden = try JSONDecoder().decode(Golden.self, from: Data(contentsOf: pack.appending(path: "vector.golden.json")))
         let walks = try #require(golden.walks, "對照檔沒有斜向")
         #expect(Set(walks.map(\.facing)) == Set(Facing.oblique.map(\.rawValue)))
-        #expect(Set(walks.map(\.gait)) == Set(Gait.all.map(\.name) + ["rest"]))
+        #expect(Set(walks.map(\.gait)) == Set(PenguinBehavior.Pace.allCases.map(\.rawValue) + ["rest"]))
         for w in walks {
             let label = "\(w.gait) \(w.facing) t=\(w.t)"
             let facing = try #require(Facing(rawValue: w.facing))
             let walk = try #require(rig.walk(w.facing), "\(label)")
             var pose = VectorWalkPose.rest
             if w.gait != "rest" {
-                pose = try #require(Gait.all.first { $0.name == w.gait }).vectorPose(at: w.t, walk: walk)
+                pose = motions.gait(for: try #require(PenguinBehavior.Pace(rawValue: w.gait))).vectorPose(at: w.t, walk: walk)
             }
             #expect(abs(pose.swayDegrees - w.swayDegrees) < 1e-9 && abs(pose.dip - w.dip) < 1e-9
                     && abs(pose.armOpenDegrees - w.armOpenDegrees) < 1e-9 && abs(pose.armDy - w.armDy) < 1e-9, "\(label)")

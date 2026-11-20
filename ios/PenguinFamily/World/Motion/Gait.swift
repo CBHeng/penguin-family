@@ -38,43 +38,50 @@ nonisolated struct VectorWalkPose: Equatable, Sendable {
     static let rest = VectorWalkPose()
 }
 
-/// 走路的步態：慢走與小跑。數字不分角色，兩隻企鵝共用（同哈囉的時間軸）。
+/// 走路的一種步態（慢走或小跑）：搖擺、下沉、手怎麼動、步幅。
 ///
-/// 數字是作者 2026-11-17 定的；算式和私有素材 repo `vector.js` 的 `GAITS`、`walkPose` 相同，逐格比對。
-nonisolated struct Gait: Equatable, Sendable {
+/// 數字每隻各一份（角色包的 `motion.json`，見 `PenguinMotions`），算式兩隻共用，
+/// 和私有素材 repo `vector.js` 的 `walkPose` 相同，逐格比對。
+nonisolated struct Gait: Decodable, Equatable, Sendable {
     /// 地板一格沿格線走是幾個步幅單位（一個單位是畫面上左右 2、上下 1 個單位；一格的邊是 16×8 單位）。
     static let unitsPerTile = 8.0
 
-    /// 識別用：`walk`、`trot`。
-    let name: String
     /// 一個循環幾秒（走兩步）。
-    let cycle: Double
+    var cycle: Double
     /// 身體左右搖擺的幅度（度）。
-    let sway: Double
+    var sway: Double
     /// 身體朝走的方向前傾（度）。
-    let lean: Double
+    var lean: Double
     /// 換腳落地時上半身往下沉多少（單位）。
-    let dip: Double
+    var dip: Double
     /// 近的手往外張開（度）。
-    let armOpen: Double
+    var armOpen: Double
     /// 手往上時多張開、往下時收回的幅度（度）。
-    let flap: Double
+    var flap: Double
     /// 近的手上下晃的幅度（單位）。
-    let armBob: Double
+    var armBob: Double
     /// 一個循環晃幾次：1 跟著左右搖擺，2 每一步一次。
-    let armBobSteps: Int
+    var armBobSteps: Int
     /// 一步的步幅（步幅單位）。
-    let stride: Double
+    var stride: Double
     /// 抬腳的高度（單位）。
-    let lift: Double
+    var lift: Double
 
-    /// 慢走：一個循環 1 秒走兩步，約 2 秒走一格地板。
-    static let walk = Gait(name: "walk", cycle: 1.0, sway: 3.0, lean: 0.0, dip: 1, armOpen: 12, flap: 0,
-                           armBob: 1, armBobSteps: 1, stride: 2, lift: 1)
-    /// 小跑：碎步快一倍、往前傾，手張更開、每一步拍一次。
-    static let trot = Gait(name: "trot", cycle: 0.5, sway: 2.0, lean: 5.0, dip: 1, armOpen: 20, flap: 8,
-                           armBob: 1, armBobSteps: 2, stride: 2, lift: 1)
-    static let all: [Gait] = [.walk, .trot]
+    /// 作者 2026-11-17 定的慢走：一個循環 1 秒走兩步，約 2 秒走一格地板。
+    static let standardWalk = Gait(cycle: 1.0, sway: 3.0, lean: 0.0, dip: 1, armOpen: 12, flap: 0,
+                                   armBob: 1, armBobSteps: 1, stride: 2, lift: 1)
+    /// 作者 2026-11-17 定的小跑：碎步快一倍、往前傾，手張更開、每一步拍一次。
+    static let standardTrot = Gait(cycle: 0.5, sway: 2.0, lean: 5.0, dip: 1, armOpen: 20, flap: 8,
+                                   armBob: 1, armBobSteps: 2, stride: 2, lift: 1)
+
+    /// 數字合不合理；不合理時回傳哪個欄位（`name` 是這個步態在 `motion.json` 裡的名稱）。
+    func problem(_ name: String) -> String? {
+        if !(cycle > 0) { return "\(name).cycle" }
+        if !(stride > 0) { return "\(name).stride" }
+        if armBobSteps != 1 && armBobSteps != 2 { return "\(name).armBobSteps" }
+        if ![sway, lean, dip, armOpen, flap, armBob, lift].allSatisfy(\.isFinite) { return name }
+        return nil
+    }
 
     /// 每秒走幾格地板：每半個循環前進一個步幅，踩著的腳才不會在地上滑。
     var tilesPerSecond: Double { stride / (cycle / 2) / Self.unitsPerTile }

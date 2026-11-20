@@ -194,7 +194,7 @@ struct VectorRigTests {
 
     @Test func gaitPoseIsSmoothAndLandsAtTheRightTime() throws {
         let walk = try #require(try Self.rig(Self.walkingJSON).walk("frontLeft"))
-        for gait in Gait.all {
+        for (label, gait) in [("walk", Gait.standardWalk), ("trot", .standardTrot)] {
             var last = gait.vectorPose(at: 0, walk: walk)
             #expect(abs(last.dip - Double(gait.dip)) < 1e-12)                    // 換腳落地時最低
             for k in 1...1000 {
@@ -203,7 +203,7 @@ struct VectorRigTests {
                 #expect(abs(pose.swayDegrees - last.swayDegrees) < 0.1 && abs(pose.dip - last.dip) < 0.05)
                 for (name, o) in pose.feet {
                     let p = try #require(last.feet[name])
-                    #expect(abs(o.dx - p.dx) < 0.05 && abs(o.dy - p.dy) < 0.05, "\(gait.name) \(name) at \(k)")
+                    #expect(abs(o.dx - p.dx) < 0.05 && abs(o.dy - p.dy) < 0.05, "\(label) \(name) at \(k)")
                 }
                 last = pose
             }
@@ -253,7 +253,7 @@ struct VectorRigTests {
         #expect(drawn > 0 && VectorRasterizer.textureBytes(rig, pixelsPerUnit: 4) == drawn)
     }
 
-    // MARK: - 替身（作者 2026-11-19 決定：第二隻的美術好之前，借別隻的形狀塗灰）
+    // MARK: - 替身（作者 2026-11-19 決定：沒有角色包的那隻，借別隻的形狀塗灰）
 
     @Test func graySilhouetteKeepsTheShapesButPaintsThemGray() throws {
         let rig = try Self.rig(Self.walkingJSON)

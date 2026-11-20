@@ -54,11 +54,29 @@ struct WanderTests {
     // MARK: - 資料
 
     @Test func bundledFileIsValid() throws {
-        let config = try #require(WanderConfig.bundled(), "wander.json 讀不進來")
-        // 每個「走去家具旁邊」在屋內都有站得到的位置
+        try Self.expectUsable(try #require(WanderConfig.bundled(), "wander.json 讀不進來"), "預設")
+    }
+
+    /// 測試用的角色包裡有 `wander.json` 的（每隻自己的閒晃，作者 2026-11-19 決定）。不進 git，乾淨 clone 下來是空的。
+    static let packsWithWander = VectorPackParityTests.allPacks.filter {
+        FileManager.default.fileExists(atPath: $0.appending(path: "wander.json").path)
+    }
+
+    /// 訊息只寫第幾隻，不寫角色 id（角色名稱只能出現在私有 repo）。
+    @Test(.enabled(if: !packsWithWander.isEmpty, "沒有角色包自己的閒晃資料（乾淨 clone），跳過"))
+    func packFilesAreValid() throws {
+        for (i, pack) in Self.packsWithWander.enumerated() {
+            let data = try Data(contentsOf: pack.appending(path: "wander.json"))
+            let config = try #require(try? WanderConfig.decode(data), "第 \(i + 1) 個角色包的 wander.json 讀不進來")
+            try Self.expectUsable(config, "第 \(i + 1) 個角色包")
+        }
+    }
+
+    /// 每個「走去家具旁邊」在屋內都有站得到的位置。
+    static func expectUsable(_ config: WanderConfig, _ label: String) throws {
         for activity in config.activities where activity.kind == .visit {
             let target = try #require(activity.target)
-            #expect(!Self.room.spots(beside: target).isEmpty, "\(activity.id) 在屋內沒有站得到的位置")
+            #expect(!room.spots(beside: target).isEmpty, "\(label)：\(activity.id) 在屋內沒有站得到的位置")
         }
     }
 

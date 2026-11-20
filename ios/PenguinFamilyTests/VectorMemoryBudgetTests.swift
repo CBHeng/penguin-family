@@ -21,7 +21,7 @@ struct VectorMemoryBudgetTests {
     /// 用最細的螢幕算：iPhone 17 等機型 1pt 是 3 個實體像素。
     static let displayScale = 3.0
 
-    /// 一家會用到的角色包：和 `CharacterPackLibrary.loadFamily` 一樣，依名稱取前面幾隻。
+    /// 一家會用到的角色包：和 `CharacterPackLibrary.loadFamily` 一樣，照 App 的順序取前面幾隻。
     static let family = Array(VectorPackParityTests.allPacks.prefix(CharacterPackLibrary.familySize))
 
     @Test(.enabled(if: !family.isEmpty, "沒有向量角色包（乾淨 clone），跳過"))

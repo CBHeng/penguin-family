@@ -17,6 +17,8 @@ import Foundation
 /// 兩隻互相讓路（作者 2026-11-19 決定）：走路時要走進的下一格被別隻佔住，就停在格子中心等；
 /// 等了一陣子還擋著就找一條繞開牠的路（第一隻等久一點，迎面撞上時第二隻先讓），繞不過去、等太久就停在原地算走到。
 /// 鏡頭閒置後回到第一隻身邊（作者 2026-11-19 決定）。
+///
+/// 每隻照自己的動作細節動（`PenguinMotions`，作者 2026-11-19 決定）：哈囉的時間軸、慢走與小跑的步態與速度都看那一隻的。
 final class RoomStage {
     /// 沒碰多久後鏡頭開始回到企鵝身邊（秒）。實機上調。
     static let idleSecondsBeforeReturn: Double = 5
@@ -27,11 +29,13 @@ final class RoomStage {
     /// 繞不過去（例如別隻站在目的地）時，等幾秒就放棄，停在原地算走到。實機上調。
     static let giveUpAfter: Double = 4
 
-    /// 後台名單的一隻：身分與造型。名單的順序就是一家的順序，最前面的是第一隻。
+    /// 後台名單的一隻：身分、造型與動作細節。名單的順序就是一家的順序，最前面的是第一隻。
     struct CastMember {
         let id: PenguinID
         /// 向量造型（ADR 0007）；nil 時借名單裡別隻的形狀塗灰，都沒有時用灰色剪影（`VectorRig.placeholder`）。
         var vector: VectorRig? = nil
+        /// 這隻各狀態怎麼動（作者 2026-11-19 決定每隻各一份）；沒有角色包時是作者定案的那一份。
+        var motions: PenguinMotions = .standard
     }
 
     /// 要畫的東西是哪一個。企鵝以身分區分，因為兩隻的造型不同。
@@ -87,6 +91,8 @@ final class RoomStage {
     private struct Penguin {
         let id: PenguinID
         let vector: VectorRig
+        /// 這隻各狀態怎麼動：哈囉照牠的時間軸、走路照牠的步態。
+        let motions: PenguinMotions
         /// 站在地板的哪一點；走路時一直變。
         var position: TilePosition
         var feet: ScenePoint
@@ -141,6 +147,8 @@ final class RoomStage {
     private let cast: [CastMember]
     /// 後台名單每一隻實際用的造型（沒有角色包的已經換成替身）。
     private let castRigs: [PenguinID: VectorRig]
+    /// 後台名單每一隻的動作細節。
+    private let castMotions: [PenguinID: PenguinMotions]
     /// 台上的企鵝，依上台先後；深度相同時後上台的畫在前面。
     private var penguins: [Penguin] = []
     /// 畫面大小（pt）與 1pt 幾個實體像素。還沒量到畫面大小前是 0。
@@ -167,9 +175,10 @@ final class RoomStage {
         Self.createdCount += 1
         self.room = room
         self.cast = cast
-        // 第二隻的美術好之前（作者 2026-11-19 決定）：借一家裡有角色包那隻的形狀塗灰；都沒有時是灰色剪影
+        // 沒有角色包的那隻（作者 2026-11-19 決定）：借一家裡有角色包那隻的形狀塗灰；都沒有時是灰色剪影
         let standIn = cast.lazy.compactMap(\.vector).first?.graySilhouette() ?? .placeholder
         castRigs = Dictionary(uniqueKeysWithValues: cast.map { ($0.id, $0.vector ?? standIn) })
+        castMotions = Dictionary(uniqueKeysWithValues: cast.map { ($0.id, $0.motions) })
         let iso = IsoProjection(room: room)
         self.iso = iso
         var polygons: [SpriteKey: [ColoredPolygon]] = [.background: RoomRenderer.background(room)]
@@ -205,7 +214,8 @@ final class RoomStage {
     /// 讓後台名單裡的一隻站到 `position` 上台。不在名單裡、或已經在台上時不做事。
     func add(_ id: PenguinID, at position: TilePosition) {
         guard !penguins.contains(where: { $0.id == id }), let rig = castRigs[id] else { return }
-        penguins.append(Penguin(id: id, vector: rig, position: position, feet: iso.feet(at: position)))
+        penguins.append(Penguin(id: id, vector: rig, motions: castMotions[id] ?? .standard,
+                                position: position, feet: iso.feet(at: position)))
         changed()
     }
 
@@ -251,7 +261,7 @@ final class RoomStage {
               newIntent != penguins[index].intent || serial != penguins[index].serial else { return }
         penguins[index].intent = newIntent
         penguins[index].serial = serial
-        penguins[index].playing = Self.motion(for: newIntent).map { ($0, now) }
+        penguins[index].playing = penguins[index].motions.motion(for: newIntent).map { ($0, now) }
         if let walk = penguins[index].walking { penguins[index].midway = Self.midway(of: walk) }
         penguins[index].walking = nil
         penguins[index].standUntil = nil
@@ -264,7 +274,7 @@ final class RoomStage {
         case .hello:
             penguins[index].facing = .front
         case .walk(let goal, let pace):
-            let gait = Self.gait(for: pace)
+            let gait = penguins[index].motions.gait(for: pace)
             let (path, walked) = route(index, to: goal)
             // 已經走了一段（從半路出發）時，把開始的時間往前推，位置與步態都從那裡接著算
             let seconds = walked / gait.tilesPerSecond
@@ -282,22 +292,6 @@ final class RoomStage {
         penguins[index].position = position
         penguins[index].feet = iso.feet(at: position)
         changed()
-    }
-
-    /// 走路的快慢用哪個步態。
-    static func gait(for pace: PenguinBehavior.Pace) -> Gait {
-        switch pace {
-        case .walk: .walk
-        case .trot: .trot
-        }
-    }
-
-    /// 意圖要播哪個正面動作；待機、站著與走路不播（走路用斜向的步態）。
-    static func motion(for intent: PenguinBehavior.Intent) -> Motion? {
-        switch intent {
-        case .idle, .stand, .walk: nil
-        case .hello: .hello
-        }
     }
 
     // MARK: - 手勢（座標是畫面上的 pt，左上角為原點）

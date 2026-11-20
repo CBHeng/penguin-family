@@ -3,7 +3,8 @@ import os
 
 /// 閒晃的資料：每種活動的權重、冷卻時間、待多久（遊戲設計：行為、權重與冷卻時間寫成資料，調整時不用改程式）。
 ///
-/// 放在公開 repo 的 `Resources/wander.json`，兩隻共用（作者 2026-11-19 決定）；數字在實機上調。
+/// 每隻各一份（作者 2026-11-19 決定兩隻各自獨立）：角色包的 `wander.json`，由私有素材 repo 匯出。
+/// 公開 repo 的 `Resources/wander.json` 是預設，給沒有角色包、或角色包沒帶這個檔的那隻。數字在實機上調。
 /// 秒數、格數都寫成範圍 `[最少, 最多]`，每次在範圍裡隨機挑。
 ///
 /// - `version`：格式版本，目前是 1。
@@ -99,7 +100,7 @@ nonisolated struct WanderConfig: Decodable, Equatable, Sendable {
 
     private static let log = Logger(subsystem: "PenguinFamily", category: "Wander")
 
-    /// App 裡的 `wander.json`。讀不到或內容不合理時是 nil（企鵝只站著，不閒晃）；`WanderTests` 守著這個檔案。
+    /// App 裡的預設 `wander.json`。讀不到或內容不合理時是 nil（沒帶自己閒晃資料的企鵝只站著）；`WanderTests` 守著這個檔案。
     static func bundled(_ bundle: Bundle = .main) -> WanderConfig? {
         do {
             guard let url = bundle.url(forResource: "wander", withExtension: "json") else {

@@ -94,7 +94,7 @@ struct RoomStageTests {
         #expect(stage.rigs().count == 2)
         #expect(stage.polygons().count == 1 + RoomLayout.indoor.furniture.count)
         stage.setIntent(.hello, for: Self.ids[0], now: 0)
-        for t in stride(from: 0.0, through: Motion.hello.duration, by: 0.05) {
+        for t in stride(from: 0.0, through: HelloMotion.standard.duration, by: 0.05) {
             _ = stage.update(now: t)
             for sprite in stage.sprites() { #expect(Self.canDraw(stage, sprite.key), "\(sprite.key) 畫不出來") }
         }
@@ -110,7 +110,7 @@ struct RoomStageTests {
     }
 
     @Test func missingPackBorrowsTheOtherShapeInGray() throws {
-        // 作者 2026-11-19 決定：第二隻的美術好之前，借第一隻的形狀塗灰，斜向與走路都和第一隻一樣
+        // 作者 2026-11-19 決定：第二隻沒有角色包時，借第一隻的形狀塗灰，斜向與走路都和第一隻一樣
         let stage = try Self.stage(withCharacter: [true, false])
         let standIn = try #require(stage.rigs()[Self.ids[1]])
         #expect(standIn.outline.color == VectorRig.placeholderOutline)
@@ -132,15 +132,15 @@ struct RoomStageTests {
         _ = stage.update(now: 0)
         stage.setIntent(.hello, for: first, now: 10)
         var tick = stage.update(now: 10.5)
-        #expect(stage.pose(of: first) == .front(HelloMotion.pose(at: 0.5)))
+        #expect(stage.pose(of: first) == .front(HelloMotion.standard.pose(at: 0.5)))
         #expect(stage.pose(of: second) == .front(.rest))         // 第二隻沒被點，照樣站著
         #expect(tick.draw && tick.keepRunning && tick.motionFinished.isEmpty)
 
         stage.setIntent(.hello, for: second, now: 11)
-        tick = stage.update(now: 10 + Motion.hello.duration)
+        tick = stage.update(now: 10 + HelloMotion.standard.duration)
         #expect(tick.motionFinished == [first])                  // 只有第一隻播完
         #expect(stage.pose(of: first) == .front(.rest))
-        tick = stage.update(now: 11 + Motion.hello.duration)
+        tick = stage.update(now: 11 + HelloMotion.standard.duration)
         #expect(tick.motionFinished == [second])
         tick = stage.update(now: 20)
         #expect(tick.motionFinished.isEmpty && !tick.keepRunning)
@@ -151,9 +151,9 @@ struct RoomStageTests {
         stage.setIntent(.hello, for: Self.ids[0], now: 0)
         stage.setIntent(.hello, for: Self.ids[0], now: 1)
         _ = stage.update(now: 1.5)
-        #expect(stage.pose(of: Self.ids[0]) == .front(HelloMotion.pose(at: 1.5)))
-        #expect(RoomStage.motion(for: .idle) == nil)
-        #expect(RoomStage.motion(for: .hello)?.name == "hello")
+        #expect(stage.pose(of: Self.ids[0]) == .front(HelloMotion.standard.pose(at: 1.5)))
+        #expect(PenguinMotions.standard.motion(for: .idle) == nil)
+        #expect(PenguinMotions.standard.motion(for: .hello)?.name == "hello")
     }
 
     @Test func drawsOnlyWhenSomethingChanged() throws {
@@ -295,7 +295,7 @@ struct RoomStageTests {
         let stage = try Self.stage()
         stage.setIntent(.hello, for: Self.ids[0], now: 0)
         stage.remove(Self.ids[0])
-        #expect(stage.update(now: Motion.hello.duration + 1).motionFinished.isEmpty)
+        #expect(stage.update(now: HelloMotion.standard.duration + 1).motionFinished.isEmpty)
         stage.setIntent(.hello, for: Self.ids[0], now: 0)          // 不在台上：不做事
         stage.setPosition(Self.positions[1], for: Self.ids[0])
         #expect(stage.onStage == [Self.ids[1]])
@@ -332,8 +332,9 @@ struct RoomStageTests {
         return stage
     }
 
-    /// 假角色往某個方向走時，`Gait` 在第幾秒的姿勢。
-    static func walking(_ gait: Gait, _ facing: Facing, at t: Double) throws -> VectorPose {
+    /// 假角色往某個方向走時，作者定案的步態在第幾秒的姿勢。
+    static func walking(_ pace: PenguinBehavior.Pace, _ facing: Facing, at t: Double) throws -> VectorPose {
+        let gait = PenguinMotions.standard.gait(for: pace)
         let walk = try #require(try VectorRigTests.rig(VectorRigTests.walkingJSON).walk(facing.rawValue))
         return .oblique(facing, gait.vectorPose(at: t, walk: walk))
     }
@@ -391,6 +392,40 @@ struct RoomStageTests {
         #expect(stage.update(now: 4).arrived.count == 1)
     }
 
+    @Test func eachPenguinMovesWithItsOwnMotions() throws {
+        // 作者 2026-11-19 決定：狀態兩隻共用，怎麼動每隻各一份；改第二隻的數字，第一隻照舊
+        let rig = try VectorRigTests.rig(VectorRigTests.walkingJSON)
+        var quick = PenguinMotions.standard
+        quick.walk.cycle = 0.5        // 慢走快一倍：每秒一格
+        quick.hello.wave = 0.4        // 哈囉少揮 1 秒
+        let stage = RoomStage(room: .indoor, cast: [.init(id: Self.ids[0], vector: rig),
+                                                    .init(id: Self.ids[1], vector: rig, motions: quick)])
+        stage.add(Self.ids[0], at: TilePosition(i: 4.5, j: 4.5))
+        stage.add(Self.ids[1], at: TilePosition(i: 4.5, j: 2.5))
+        stage.resize(viewport: CGSize(width: 402, height: 874), displayScale: 3)
+        stage.ownerTouched(now: 1000)
+
+        // 哈囉：各照自己的時間軸，第二隻先播完
+        for id in Self.ids { stage.setIntent(.hello, for: id, now: 0) }
+        _ = stage.update(now: 1)
+        #expect(stage.pose(of: Self.ids[0]) == .front(HelloMotion.standard.pose(at: 1)))
+        #expect(stage.pose(of: Self.ids[1]) == .front(quick.hello.pose(at: 1)))
+        #expect(stage.update(now: quick.hello.duration).motionFinished == [Self.ids[1]])
+        #expect(stage.update(now: HelloMotion.standard.duration).motionFinished == [Self.ids[0]])
+
+        // 慢走：各照自己的步態與速度，往右前走 4 格
+        stage.setIntent(.walk(to: Tile(i: 8, j: 4), pace: .walk), for: Self.ids[0], now: 10)
+        stage.setIntent(.walk(to: Tile(i: 8, j: 2), pace: .walk), for: Self.ids[1], now: 10)
+        _ = stage.update(now: 11)
+        #expect(stage.position(of: Self.ids[0]) == TilePosition(i: 5.0, j: 4.5))      // 每秒半格
+        #expect(stage.position(of: Self.ids[1]) == TilePosition(i: 5.5, j: 2.5))      // 每秒一格
+        #expect(stage.pose(of: Self.ids[0]) == (try Self.walking(.walk, .frontRight, at: 1)))
+        let walk = try #require(rig.walk("frontRight"))
+        #expect(stage.pose(of: Self.ids[1]) == .oblique(.frontRight, quick.walk.vectorPose(at: 1, walk: walk)))
+        #expect(stage.update(now: 14).arrived.map(\.id) == [Self.ids[1]])
+        #expect(stage.update(now: 18).arrived.map(\.id) == [Self.ids[0]])
+    }
+
     @Test func unreachableGoalArrivesRightAwayWhereItStands() throws {
         let stage = try Self.walkingStage()
         stage.setIntent(.walk(to: Tile(i: 7, j: 7), pace: .walk), for: Self.ids[0], now: 0)   // 沙發上
@@ -417,7 +452,7 @@ struct RoomStageTests {
         stage.setIntent(.hello, for: id, now: 3)
         _ = stage.update(now: 3.5)
         #expect(stage.facing(of: id) == .front)
-        #expect(stage.pose(of: id) == .front(HelloMotion.pose(at: 0.5)))
+        #expect(stage.pose(of: id) == .front(HelloMotion.standard.pose(at: 0.5)))
     }
 
     // MARK: - 站著（A1 第 11 項：發呆、東張西望、在家具旁邊待一下）
@@ -436,7 +471,7 @@ struct RoomStageTests {
         #expect(tick.motionFinished == [id])
         #expect(stage.update(now: 14).motionFinished.isEmpty)                      // 只回報一次
         #expect(stage.facing(of: id) == .backRight)                                // 站滿後維持方向
-        #expect(RoomStage.motion(for: .stand(facing: nil, seconds: 1)) == nil)
+        #expect(PenguinMotions.standard.motion(for: .stand(facing: nil, seconds: 1)) == nil)
     }
 
     @Test func standWithoutFacingKeepsTheWalkingDirection() throws {
@@ -467,7 +502,7 @@ struct RoomStageTests {
         stage.setIntent(.stand(facing: .backLeft, seconds: 10), for: id, now: 0, serial: 1)
         stage.setIntent(.hello, for: id, now: 1, serial: 2)
         #expect(stage.facing(of: id) == .front)
-        #expect(stage.update(now: 1 + Motion.hello.duration).motionFinished == [id])   // 哈囉播完
+        #expect(stage.update(now: 1 + HelloMotion.standard.duration).motionFinished == [id])   // 哈囉播完
         #expect(stage.update(now: 20).motionFinished.isEmpty)                          // 原本的站著不再回報
     }
 
@@ -588,12 +623,12 @@ struct RoomStageTests {
 
         stage.setIntent(.hello, for: id, now: 10)
         #expect(stage.update(now: 10.5).draw)
-        #expect(stage.pose(of: id) == .front(HelloMotion.pose(at: 10.5 - 10)))
+        #expect(stage.pose(of: id) == .front(HelloMotion.standard.pose(at: 10.5 - 10)))
         let next = stage.update(now: 10.51)                                       // 每一格都照時間轉
         #expect(next.draw && next.keepRunning)
-        #expect(Self.sprite(stage, id)?.pose == .front(HelloMotion.pose(at: 10.51 - 10)))
+        #expect(Self.sprite(stage, id)?.pose == .front(HelloMotion.standard.pose(at: 10.51 - 10)))
 
-        let end = stage.update(now: 10 + Motion.hello.duration)
+        let end = stage.update(now: 10 + HelloMotion.standard.duration)
         #expect(end.motionFinished == [id] && stage.pose(of: id) == .front(.rest))
         #expect(!stage.update(now: 20).draw)                                      // 站好之後不再重畫
     }
