@@ -73,6 +73,8 @@ nonisolated struct RoomLayout: Equatable, Sendable {
     let wallHeight: Int
     let furniture: [Furniture]
     let wallItems: [WallItem]
+    /// 一開始站的格子，依上台先後（ADR 0009）；角色比這裡多時，從第一個往外找最近的空格（`startTiles`）。
+    var starts: [Tile] = []
 
     var floor: TileRect { TileRect(x: 0, y: 0, width: widthTiles, height: depthTiles) }
 
@@ -88,7 +90,9 @@ nonisolated struct RoomLayout: Equatable, Sendable {
         ],
         wallItems: [
             WallItem(kind: .window, side: .right, start: 6, length: 3, bottom: 18, top: 52),
-        ])
+        ],
+        // 前兩隻並排，第二隻在第一隻的畫面右邊
+        starts: [Tile(i: 4, j: 4), Tile(i: 5, j: 3)])
 
     /// 擺放規則有問題的地方；沒有問題時是空的。
     func problems() -> [String] {
@@ -100,6 +104,9 @@ nonisolated struct RoomLayout: Equatable, Sendable {
             for b in furniture[(i + 1)...] where a.footprint.intersects(b.footprint) {
                 found.append("\(a.kind.rawValue) 和 \(b.kind.rawValue) 重疊")
             }
+        }
+        for tile in starts where !isWalkable(tile) {
+            found.append("起點 (\(tile.i), \(tile.j)) 站不上去")
         }
         for item in wallItems {
             let wallLength = item.side == .left ? depthTiles : widthTiles

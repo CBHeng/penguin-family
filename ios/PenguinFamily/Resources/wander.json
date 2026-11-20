@@ -1,6 +1,6 @@
 {
-  "version": 1,
-  "pace": { "walk": 5, "trot": 1 },
+  "version": 2,
+  "pace": { "slow": 5, "fast": 1 },
   "breaks": { "everyTiles": [3, 5], "seconds": [0.8, 2] },
   "glanceFacings": ["front", "frontLeft", "frontRight", "backLeft", "backRight"],
   "activities": [

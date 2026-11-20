@@ -5,7 +5,7 @@ import os
 ///
 /// 只畫：不算姿勢、不排序、不讀模擬。姿勢、前後順序、鏡頭都由畫面準備（`FrameBuilder`）算好放在清單裡。
 /// - 箱庭（牆、地板、家具）是多邊形：載入時切成三角形放進一個緩衝區，之後每一格只指定畫哪一段。
-/// - 企鵝：載入時把每個畫好的方向的每個部件畫成兩張貼圖（外框、顏色，見 `VectorRasterizer`），每一格照清單裡每個部件的矩陣
+/// - 角色：載入時把每個畫好的方向的每個部件畫成兩張貼圖（外框、顏色，見 `VectorRasterizer`），每一格照清單裡每個部件的矩陣
 ///   把貼圖的四個角放到畫面上；先畫整隻的外框，再畫顏色。貼圖照抱抱近景的倍率準備（螢幕倍率最多算到 2），縮小時用 mipmap。
 ///   右前、右後翻轉左邊的貼圖，不另外準備（矩陣裡已經翻好）。
 /// - 邊緣用 4 倍多重取樣抗鋸齒；多重取樣的畫布只在 GPU 晶片上（memoryless），不佔記憶體。
@@ -66,7 +66,7 @@ final class SpriteRenderer: NSObject, MTKViewDelegate {
     /// 每一組多邊形在緩衝區裡是第幾個頂點到第幾個。
     private let polygonRanges: [DrawKey: Range<Int>]
     /// 每一隻、每個畫好的方向、每個部件的貼圖。
-    private let vectorParts: [PenguinID: [String: [String: VectorPart]]]
+    private let vectorParts: [CharacterID: [String: [String: VectorPart]]]
     private var multisample: MTLTexture?
     /// 貼圖佔多少記憶體（位元組，含 mipmap）。
     let textureBytes: Int
@@ -76,7 +76,7 @@ final class SpriteRenderer: NSObject, MTKViewDelegate {
     ///   - rigs: 後台名單每一隻的造型，包含還沒上台的。
     ///   - displayScale: 1pt 幾個實體像素，決定向量部件的貼圖解析度。
     init?(device: MTLDevice, pixelFormat: MTLPixelFormat, polygons: [DrawKey: [ColoredPolygon]],
-          rigs: [PenguinID: VectorRig], displayScale: Double) {
+          rigs: [CharacterID: VectorRig], displayScale: Double) {
         guard let queue = device.makeCommandQueue(),
               let library = device.makeDefaultLibrary(),
               let quadPipeline = Self.pipeline(device, library, pixelFormat, "quadVertex", "quadFragment"),
@@ -104,8 +104,8 @@ final class SpriteRenderer: NSObject, MTKViewDelegate {
         let polygonBuffer = vertices.isEmpty ? nil : device.makeBuffer(
             bytes: vertices, length: vertices.count * MemoryLayout<PolygonVertex>.stride, options: .storageModeShared)
 
-        // 企鵝：部件畫成貼圖，產生 mipmap
-        var parts: [PenguinID: [String: [String: VectorPart]]] = [:]
+        // 角色：部件畫成貼圖，產生 mipmap
+        var parts: [CharacterID: [String: [String: VectorPart]]] = [:]
         let pixelsPerUnit = Self.vectorPixelsPerUnit(displayScale: displayScale)
         let rasterize = PerfSignposts.signposter.beginInterval("rasterize")
         if !rigs.isEmpty, let mipmaps = queue.makeCommandBuffer(), let blit = mipmaps.makeBlitCommandEncoder() {
@@ -233,7 +233,7 @@ final class SpriteRenderer: NSObject, MTKViewDelegate {
                 encoder.setVertexBuffer(polygonBuffer, offset: 0, index: 0)
                 encoder.setVertexBytes(&polygonUniforms, length: MemoryLayout<PolygonUniforms>.stride, index: 1)
                 encoder.drawPrimitives(type: .triangle, vertexStart: range.lowerBound, vertexCount: range.count)
-            case .penguin(let id, let look, let parts):
+            case .character(let id, let look, let parts):
                 guard let textures = vectorParts[id]?[look] else { continue }
                 encoder.setRenderPipelineState(quadPipeline)
                 encoder.setFragmentSamplerState(smooth, index: 0)

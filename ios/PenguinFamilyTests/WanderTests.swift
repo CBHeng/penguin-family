@@ -34,10 +34,10 @@ struct WanderTests {
     }
 
     /// 預設只慢走、路上不停。
-    static func config(_ activities: [WanderConfig.Activity], pace: WanderConfig.PaceWeights = .init(walk: 1, trot: 0),
+    static func config(_ activities: [WanderConfig.Activity], pace: WanderConfig.PaceWeights = .init(slow: 1, fast: 0),
                        breaks: WanderConfig.Breaks? = nil,
                        glanceFacings: [Facing] = [.frontLeft, .frontRight]) -> WanderConfig {
-        WanderConfig(version: 1, pace: pace, breaks: breaks, glanceFacings: glanceFacings, activities: activities)
+        WanderConfig(version: 2, pace: pace, breaks: breaks, glanceFacings: glanceFacings, activities: activities)
     }
 
     /// 做完一整個活動：第一步挑活動，再把剩下的步驟拿完。
@@ -92,8 +92,8 @@ struct WanderTests {
             }
         }
         #expect(problem { _ in } == nil)
-        #expect(problem { $0.version = 2 } == .unsupportedVersion(2))
-        #expect(problem { $0.pace = .init(walk: 0, trot: 0) } == .invalid("pace"))
+        #expect(problem { $0.version = 3 } == .unsupportedVersion(3))
+        #expect(problem { $0.pace = .init(slow: 0, fast: 0) } == .invalid("pace"))
         #expect(problem { $0.breaks = .init(everyTiles: 0...2, seconds: 1...1) } == .invalid("breaks"))
         #expect(problem { $0.activities[0].weight = -1 } == .invalid("z.weight"))
         #expect(problem { $0.activities[0].cooldown = -1 } == .invalid("z.cooldown"))
@@ -188,7 +188,7 @@ struct WanderTests {
                 var routine = WanderRoutine(config: Self.config([Self.visit(target)]), room: Self.room)
                 let steps = Self.wholeActivity(&routine, rng: &rng)
                 #expect(steps.count == 2)
-                guard case .walk(let tile, .walk) = steps.first, case .stand(let facing?, 1) = steps.last else {
+                guard case .move(let tile, .slow) = steps.first, case .stand(let facing?, 1) = steps.last else {
                     Issue.record("\(target)：\(steps)")
                     continue
                 }
@@ -231,7 +231,7 @@ struct WanderTests {
         var goals: Set<Tile> = []
         for t in 0..<50 {
             let steps = Self.wholeActivity(&routine, now: Double(t), rng: &rng)
-            guard steps.count == 2, case .walk(let goal, _) = steps[0], case .stand(nil, let seconds) = steps[1] else {
+            guard steps.count == 2, case .move(let goal, _) = steps[0], case .stand(nil, let seconds) = steps[1] else {
                 Issue.record("\(steps)")
                 continue
             }
@@ -254,7 +254,7 @@ struct WanderTests {
         var legs: [Int] = []
         for (n, step) in steps.dropLast().enumerated() {
             if n % 2 == 0 {
-                guard case .walk(let tile, .walk) = step else { Issue.record("第 \(n) 步：\(step)"); return }
+                guard case .move(let tile, .slow) = step else { Issue.record("第 \(n) 步：\(step)"); return }
                 legs.append(try #require(Self.room.stepCounts(from: at)[tile]))
                 at = tile
             } else {
@@ -301,13 +301,13 @@ struct WanderTests {
     @Test func paceFollowsTheWeights() {
         var stroll = Self.activity("s", .stroll)
         stroll.tiles = 2...2
-        var routine = WanderRoutine(config: Self.config([stroll], pace: .init(walk: 0, trot: 1)), room: Self.room)
+        var routine = WanderRoutine(config: Self.config([stroll], pace: .init(slow: 0, fast: 1)), room: Self.room)
         var rng = SeededGenerator(seed: 13)
-        guard case .walk(_, let pace) = routine.next(from: Self.here, now: 0, using: &rng) else {
+        guard case .move(_, let pace) = routine.next(from: Self.here, now: 0, using: &rng) else {
             Issue.record("隨便走走的第一步要是走路")
             return
         }
-        #expect(pace == .trot)
+        #expect(pace == .fast)
     }
 
     // MARK: - 兩隻（A1 第 12 項）
@@ -318,7 +318,7 @@ struct WanderTests {
         var rng = SeededGenerator(seed: 14)
         for t in 0..<10 {
             let steps = Self.wholeActivity(&routine, others: [Tile(i: 7, j: 4)], now: Double(t), rng: &rng)
-            guard steps.count == 2, case .walk(Tile(i: 6, j: 4), .walk) = steps[0],
+            guard steps.count == 2, case .move(Tile(i: 6, j: 4), .slow) = steps[0],
                   case .stand(.frontRight?, let seconds) = steps[1] else {
                 Issue.record("\(steps)")
                 continue
@@ -353,13 +353,13 @@ struct WanderTests {
         let around: Set<Tile> = [Tile(i: 5, j: 4), Tile(i: 3, j: 4), Tile(i: 4, j: 5)]
         for t in 0..<10 {
             let steps = Self.wholeActivity(&strolling, others: around, now: Double(t), rng: &rng)
-            #expect(steps.first == .walk(to: Tile(i: 4, j: 3), pace: .walk))
+            #expect(steps.first == .move(to: Tile(i: 4, j: 3), pace: .slow))
         }
         // 走去窗邊：窗下三格有兩格是別隻的
         var visiting = WanderRoutine(config: Self.config([Self.visit(.window)]), room: Self.room)
         for t in 0..<10 {
             let steps = Self.wholeActivity(&visiting, others: [Tile(i: 6, j: 0), Tile(i: 7, j: 0)], now: Double(t), rng: &rng)
-            #expect(steps.first == .walk(to: Tile(i: 8, j: 0), pace: .walk))
+            #expect(steps.first == .move(to: Tile(i: 8, j: 0), pace: .slow))
         }
     }
 
@@ -371,16 +371,16 @@ struct WanderTests {
         var rng = SeededGenerator(seed: 10)
         let start = Tile(i: 11, j: 0)
         let plain = Self.wholeActivity(&routine, from: start, rng: &rng)
-        guard case .walk(let firstBreak, _) = plain.first else { Issue.record("\(plain)"); return }
+        guard case .move(let firstBreak, _) = plain.first else { Issue.record("\(plain)"); return }
         var avoiding = WanderRoutine(config: routine.config, room: Self.room)
         rng = SeededGenerator(seed: 10)
         let steps = Self.wholeActivity(&avoiding, from: start, others: [firstBreak], rng: &rng)
-        #expect(!steps.contains(.walk(to: firstBreak, pace: .walk)))
+        #expect(!steps.contains(.move(to: firstBreak, pace: .slow)))
         #expect(steps.count == plain.count - 2)                                     // 少停一次
     }
 
     @Test func stepsBecomeRequests() {
-        #expect(WanderRoutine.Step.walk(to: Self.here, pace: .trot).request == .walkRequested(to: Self.here, pace: .trot))
+        #expect(WanderRoutine.Step.move(to: Self.here, pace: .fast).request == .moveRequested(to: Self.here, pace: .fast))
         #expect(WanderRoutine.Step.stand(facing: .front, seconds: 2).request == .standRequested(facing: .front, seconds: 2))
     }
 }

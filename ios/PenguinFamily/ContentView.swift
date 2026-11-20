@@ -9,8 +9,8 @@ import SwiftUI
 struct ContentView: View {
     private enum Phase {
         case loading
-        /// 載入完成；一家的每一隻（nil 表示那一隻沒有角色包）、閒晃的資料（讀不到是 nil）、事件紀錄。
-        case ready([LoadedCharacter?], WanderConfig?, EventLog)
+        /// 載入完成；一家的每一隻（照名單，沒有角色包的那隻 `character` 是 nil）、閒晃的資料（讀不到是 nil）、事件紀錄。
+        case ready([FamilyMember], WanderConfig?, EventLog)
     }
 
     @Environment(\.modelContext) private var modelContext

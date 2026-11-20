@@ -1,19 +1,19 @@
-/// 閒晃：沒人碰時接下來做什麼（遊戲設計的「閒晃走動」與「發呆」）。每隻企鵝一個。
+/// 閒晃：沒人碰時接下來做什麼（遊戲設計的「閒晃走動」與「發呆」）。每隻角色一個。
 ///
-/// 依 `WanderConfig` 的權重挑一種活動，冷卻中的先不挑，再拆成一步步交給狀態機：走去某一格、站著幾秒。
+/// 依 `WanderConfig` 的權重挑一種活動，冷卻中的先不挑，再拆成一步步交給狀態機：走去某一格、站著幾秒。不分物種。
 /// 一種活動的步驟用完才挑下一種；被主人打斷（哈囉）後接著做剩下的步驟。
-/// 別隻企鵝在哪由外面給：不挑牠們的格子當目的地或半路停的地方，「走去黏著另一隻」走到牠們旁邊（A1 第 12 項）。
+/// 別隻角色在哪由外面給：不挑牠們的格子當目的地或半路停的地方，「走去黏著另一隻」走到牠們旁邊（A1 第 12 項）。
 /// 不碰畫面；時間（秒）與亂數由外面給，所以可以用固定的亂數測。
 nonisolated struct WanderRoutine: Sendable {
     /// 交給狀態機的一步。
     enum Step: Equatable, Sendable {
-        case walk(to: Tile, pace: PenguinBehavior.Pace)
+        case move(to: Tile, pace: CharacterBehavior.Pace)
         case stand(facing: Facing?, seconds: Double)
 
         /// 這一步要給狀態機的輸入。
-        var request: PenguinBehavior.Input {
+        var request: CharacterBehavior.Input {
             switch self {
-            case .walk(let tile, let pace): .walkRequested(to: tile, pace: pace)
+            case .move(let tile, let pace): .moveRequested(to: tile, pace: pace)
             case .stand(let facing, let seconds): .standRequested(facing: facing, seconds: seconds)
             }
         }
@@ -36,7 +36,7 @@ nonisolated struct WanderRoutine: Sendable {
         self.room = room
     }
 
-    /// 下一步。這次活動的步驟用完時挑新的活動；`here` 是企鵝現在站的格子，`now` 是現在的時間（秒）。
+    /// 下一步。這次活動的步驟用完時挑新的活動；`here` 是角色現在站的格子，`now` 是現在的時間（秒）。
     /// `others` 是台上別隻的格子（正在走的話是牠要去的那一格）。
     /// 什麼都做不了時是 nil（例如資料裡的活動在這個房間都走不到）。
     mutating func next(from here: Tile, others: Set<Tile> = [], now: Double,
@@ -127,14 +127,14 @@ nonisolated struct WanderRoutine: Sendable {
         }
     }
 
-    /// 走到 `goal` 的步驟：整段用同一種步態；路長時每走幾步停一下（`breaks`），停的點剛好是別隻的格子時不停。
+    /// 走到 `goal` 的步驟：整段用同一種快慢；路長時每走幾步停一下（`breaks`），停的點剛好是別隻的格子時不停。
     /// 已經在那裡時是空的。停的點取在找路找到的路上，模擬從那裡再找路，走的步數不變。
     private func walk(from here: Tile, to goal: Tile, others: Set<Tile>,
                       using rng: inout some RandomNumberGenerator) -> [Step] {
         guard goal != here, let path = RoomPath.find(in: room, from: here, to: goal) else { return [] }
-        let pace: PenguinBehavior.Pace = Self.pick([PenguinBehavior.Pace.walk, .trot], weight: {
-            $0 == .walk ? config.pace.walk : config.pace.trot
-        }, using: &rng) ?? .walk
+        let pace: CharacterBehavior.Pace = Self.pick([CharacterBehavior.Pace.slow, .fast], weight: {
+            $0 == .slow ? config.pace.slow : config.pace.fast
+        }, using: &rng) ?? .slow
         var steps: [Step] = []
         if let breaks = config.breaks {
             var at = 0
@@ -143,12 +143,12 @@ nonisolated struct WanderRoutine: Sendable {
                 guard path.steps - next >= Self.minimumStepsAfterBreak else { break }
                 let seconds = Double.random(in: breaks.seconds, using: &rng)
                 if !others.contains(path.tiles[next]) {
-                    steps.append(.walk(to: path.tiles[next], pace: pace))
+                    steps.append(.move(to: path.tiles[next], pace: pace))
                     steps.append(.stand(facing: nil, seconds: seconds))
                 }
                 at = next
             }
         }
-        return steps + [.walk(to: goal, pace: pace)]
+        return steps + [.move(to: goal, pace: pace)]
     }
 }

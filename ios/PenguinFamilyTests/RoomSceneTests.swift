@@ -5,10 +5,10 @@ import Testing
 @testable import PenguinFamily
 
 /// 箱庭與模擬的驅動（ADR 0008）：箱庭只建一次、一開始在台上的企鵝、點擊送進模擬、照真實時間跑節拍、
-/// 沒事時跳過、落後太多時丟掉時間、畫的時間晚一個節拍；一家的身分與一開始誰在台上。
+/// 沒事時跳過、落後太多時丟掉時間、畫的時間晚一個節拍；一開始誰在台上、站在哪。
 @MainActor
 struct RoomSceneTests {
-    static let ids = [PenguinID("first"), PenguinID("second")]
+    static let ids = [CharacterID("first"), CharacterID("second")]
     static let positions = [TilePosition(i: 4.5, j: 4.5), TilePosition(i: 5.5, j: 3.5)]
     static let tick = 1.0 / Double(Simulation.ticksPerSecond)
 
@@ -50,15 +50,15 @@ struct RoomSceneTests {
         #expect(RoomScene.createdCount == before)
     }
 
-    @Test func sceneStartsWithTheGivenPenguinsOnStage() throws {
+    @Test func sceneStartsWithTheGivenCharactersOnStage() throws {
         let scene = try Self.scene()
-        #expect(scene.runner.current.penguins.isEmpty)                             // 還沒跑節拍
+        #expect(scene.runner.current.characters.isEmpty)                             // 還沒跑節拍
         scene.runner.advance(to: 100.05)
-        #expect(scene.runner.current.penguins.map(\.id) == Self.ids)
-        #expect(scene.runner.current.penguin(Self.ids[0])?.position == Self.positions[0])
+        #expect(scene.runner.current.characters.map(\.id) == Self.ids)
+        #expect(scene.runner.current.character(Self.ids[0])?.position == Self.positions[0])
     }
 
-    @Test func tappingAPenguinTellsTheSimulation() throws {
+    @Test func tappingACharacterTellsTheSimulation() throws {
         let scene = try Self.scene()
         var woke = 0
         scene.runner.onWake = { woke += 1 }
@@ -76,7 +76,7 @@ struct RoomSceneTests {
         #expect(scene.tap(at: .zero, now: 100.1) == nil)                            // 點空地：沒有反應
         #expect(scene.runner.isActive)                                              // 事件還在收件匣：遊戲迴圈要繼續
         #expect(scene.runner.advance(to: 100.2) == [.ownerTapped(Self.ids[0], at: tapped)])
-        guard case .motion(.hello, _)? = scene.runner.current.penguin(Self.ids[0])?.activity else {
+        guard case .motion(.hello, _)? = scene.runner.current.character(Self.ids[0])?.activity else {
             Issue.record("第一隻沒有哈囉")
             return
         }
@@ -85,11 +85,11 @@ struct RoomSceneTests {
     // MARK: - 驅動模擬
 
     @Test func runsTicksToTheWallClock() {
-        let runner = Self.runner(.input(Self.ids[0], .walkRequested(to: Tile(i: 8, j: 4), pace: .walk)))
+        let runner = Self.runner(.input(Self.ids[0], .moveRequested(to: Tile(i: 8, j: 4), pace: .slow)))
         Self.play(runner, until: 1)
         #expect(runner.current.tick == 30)
         #expect(runner.previous.tick == 29)
-        let position = runner.current.penguin(Self.ids[0])?.position
+        let position = runner.current.character(Self.ids[0])?.position
         #expect(abs((position?.i ?? 0) - 5.0) < 1e-9)                              // 從模擬時間 0 開始，慢走每秒半格
         #expect(runner.isActive)
         #expect(abs(runner.renderTime(at: 1) - (1 - Self.tick)) < 1e-9)            // 畫的時間晚一個節拍
@@ -107,7 +107,7 @@ struct RoomSceneTests {
     }
 
     @Test func fallingFarBehindDropsTheTime() {
-        let runner = Self.runner(.input(Self.ids[0], .walkRequested(to: Tile(i: 8, j: 4), pace: .walk)))
+        let runner = Self.runner(.input(Self.ids[0], .moveRequested(to: Tile(i: 8, j: 4), pace: .slow)))
         Self.play(runner, until: 0.5)
         let before = runner.current.tick
         runner.advance(to: 10)                                                      // 例如從背景回來：不快轉
@@ -119,7 +119,7 @@ struct RoomSceneTests {
         // ADR 0008：模擬在自己的執行緒跑，主執行緒不呼叫 advance；事件從主執行緒送進去，輸出依序交回主執行緒
         var simulation = Simulation(room: .indoor, cast: [.init(id: Self.ids[0])], seed: 1)
         simulation.send(.enter(Self.ids[0], at: Self.positions[0]))
-        simulation.send(.input(Self.ids[0], .walkRequested(to: Tile(i: 8, j: 4), pace: .walk)))
+        simulation.send(.input(Self.ids[0], .moveRequested(to: Tile(i: 8, j: 4), pace: .slow)))
         let runner = SimulationRunner(simulation: simulation, now: CACurrentMediaTime(), extraTickDelay: 0)
         var outputs: [Simulation.Output] = []
         var woke = 0
@@ -138,12 +138,18 @@ struct RoomSceneTests {
 
     // MARK: - 一家
 
-    @Test func eventLogNamesEachPenguin() {
-        #expect(PenguinID(character: nil, index: 0).rawValue == "placeholder-1")
-        #expect(PenguinID(character: nil, index: 1).rawValue == "placeholder-2")
+    @Test func everyoneOnStageGetsTheirOwnStartTile() {
+        // ADR 0009：一家幾隻由名單決定；前兩隻站箱庭的起點，其他的從第一個起點往外找最近的空格，不會疊在一起
+        let ids = (1...5).map { CharacterID("member-\($0)") }
+        let start = GameView.startPositions(ids, in: .indoor)
+        #expect(start.map(\.id) == ids)
+        #expect(Array(start.map(\.position).prefix(2)) == Self.positions)
+        let tiles = start.map { Tile(containing: $0.position) }
+        #expect(Set(tiles).count == ids.count && tiles.allSatisfy(RoomLayout.indoor.isWalkable))
+        #expect(GameView.startPositions([], in: .indoor).isEmpty)
     }
 
-    @Test func gameStartsWithBothPenguinsOnStage() {
+    @Test func gameStartsWithBothCharactersOnStage() {
         // A1 第 12 項：第二隻回到畫面
         #expect(GameView.initialStage(Self.ids) == Self.ids)
         #expect(GameView.initialStage([]).isEmpty)

@@ -6,7 +6,7 @@ import Synchronization
 ///
 /// - **時間**：模擬的時間和真實時間對齊；`epoch` 是模擬時間 0 對到的真實時間（秒，`CACurrentMediaTime` 的時間軸）。
 /// - **停下來不補跑**：沒有東西在動時直接跳到該醒來的前一拍（`Simulation.skip`）；執行緒睡到下一個排定的時間或有事件進來。
-/// - **落後太多就丟掉時間**：一次最多補 `maxCatchUpTicks` 個節拍（例如 App 從背景回來），企鵝不會快轉。
+/// - **落後太多就丟掉時間**：一次最多補 `maxCatchUpTicks` 個節拍（例如 App 從背景回來），角色不會快轉。
 /// - **畫的時間晚一個節拍**（`renderTime`），落在最近兩份快照之間，畫面準備在中間內插。
 ///
 /// 跨執行緒只傳值，交接處用 `Mutex`（iOS 18 起）：
@@ -109,7 +109,7 @@ nonisolated final class SimulationRunner: @unchecked Sendable {
             let before = latest.current
             let outputs = PerfSignposts.measure("simulate") { advance(to: CACurrentMediaTime()) }
             let after = latest.current
-            let changed = after.penguins != before.penguins || after.isActive != before.isActive
+            let changed = after.characters != before.characters || after.isActive != before.isActive
             if !outputs.isEmpty || changed {
                 DispatchQueue.main.async { [weak self] in
                     MainActor.assumeIsolated {

@@ -108,7 +108,7 @@ final class GameLoop: NSObject {
             PerfSignposts.measure("draw") { view?.draw() }
         }
         // 模擬還在動、鏡頭還在動，或畫面還沒追上最新的快照（落後一個節拍）：下一格繼續。
-        // 站著的企鵝站滿時，模擬的執行緒會叫醒這裡，不用自己算時間
+        // 站著的角色站滿時，模擬的執行緒會叫醒這裡，不用自己算時間
         guard !(runner.isActive || prepared.keepRunning || time < latest.current.time) else { return }
         link.isPaused = true
         pausedAt = now

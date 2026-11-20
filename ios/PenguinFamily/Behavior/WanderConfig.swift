@@ -7,8 +7,8 @@ import os
 /// 公開 repo 的 `Resources/wander.json` 是預設，給沒有角色包、或角色包沒帶這個檔的那隻。數字在實機上調。
 /// 秒數、格數都寫成範圍 `[最少, 最多]`，每次在範圍裡隨機挑。
 ///
-/// - `version`：格式版本，目前是 1。
-/// - `pace`：走路時慢走（`walk`）、小跑（`trot`）的權重。平常慢，偶爾小跑。
+/// - `version`：格式版本，目前是 2。第 1 版的 `pace` 寫成 `walk`、`trot`（企鵝的慢走、小跑），也讀得懂。
+/// - `pace`：移動時慢（`slow`）、快（`fast`）的權重，不分物種（ADR 0009）。平常慢，偶爾快。
 /// - `breaks`（可以不寫）：路長的時候，每走 `everyTiles` 格停一下，停 `seconds` 秒（「走幾步就停一下」）。
 /// - `glanceFacings`：東張西望時會看哪些方向（`front`、`frontLeft`、`backLeft`、`frontRight`、`backRight`）。
 /// - `activities`：每種活動。共同的欄位是 `id`（不能重複，冷卻用它記）、`kind`、`weight`（權重，0 是不做）、
@@ -20,7 +20,7 @@ import os
 ///   - `stayClose`：走去黏著另一隻：走到牠旁邊緊鄰的一格，面向牠待 `seconds` 秒（作者 2026-11-19 決定）。
 ///     牠正在走的話，走去牠要去的那一格旁邊。台上只有自己時不挑。
 nonisolated struct WanderConfig: Decodable, Equatable, Sendable {
-    static let supportedVersion = 1
+    static let supportedVersion = 2
 
     enum Kind: String, Decodable, Sendable {
         case visit, stroll, zoneOut, lookAround, stayClose
@@ -42,9 +42,9 @@ nonisolated struct WanderConfig: Decodable, Equatable, Sendable {
         var facing: Facing? = nil
     }
 
-    struct PaceWeights: Decodable, Equatable, Sendable {
-        var walk: Double
-        var trot: Double
+    struct PaceWeights: Equatable, Sendable {
+        var slow: Double
+        var fast: Double
     }
 
     struct Breaks: Decodable, Equatable, Sendable {
@@ -66,8 +66,8 @@ nonisolated struct WanderConfig: Decodable, Equatable, Sendable {
 
     /// 檢查數字合不合理；不合理時丟出 `WanderConfigError`，說明是哪個欄位。
     func validate() throws {
-        guard version == Self.supportedVersion else { throw WanderConfigError.unsupportedVersion(version) }
-        guard pace.walk >= 0, pace.trot >= 0, pace.walk + pace.trot > 0 else { throw WanderConfigError.invalid("pace") }
+        guard (1...Self.supportedVersion).contains(version) else { throw WanderConfigError.unsupportedVersion(version) }
+        guard pace.slow >= 0, pace.fast >= 0, pace.slow + pace.fast > 0 else { throw WanderConfigError.invalid("pace") }
         if let breaks {
             guard breaks.everyTiles.lowerBound >= 1, breaks.seconds.lowerBound >= 0 else {
                 throw WanderConfigError.invalid("breaks")
@@ -100,7 +100,7 @@ nonisolated struct WanderConfig: Decodable, Equatable, Sendable {
 
     private static let log = Logger(subsystem: "PenguinFamily", category: "Wander")
 
-    /// App 裡的預設 `wander.json`。讀不到或內容不合理時是 nil（沒帶自己閒晃資料的企鵝只站著）；`WanderTests` 守著這個檔案。
+    /// App 裡的預設 `wander.json`。讀不到或內容不合理時是 nil（沒帶自己閒晃資料的角色只站著）；`WanderTests` 守著這個檔案。
     static func bundled(_ bundle: Bundle = .main) -> WanderConfig? {
         do {
             guard let url = bundle.url(forResource: "wander", withExtension: "json") else {
@@ -120,12 +120,24 @@ nonisolated extension WanderConfig {
         case version, pace, breaks, glanceFacings, activities
     }
 
+    private enum PaceKeys: String, CodingKey {
+        case slow, fast
+        /// 第 1 版的名稱（企鵝的慢走、小跑）。
+        case walk, trot
+    }
+
     /// 自動產生的解碼只讓 Optional 的欄位可以不寫；`glanceFacings` 沒有東張西望時可以不寫，所以自己解。
+    /// `pace` 照版本讀：第 1 版是 `walk`、`trot`，第 2 版是 `slow`、`fast`。
     /// 寫在 extension 裡，保留逐欄位的建構式（測試用）。
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        self.init(version: try c.decode(Int.self, forKey: .version),
-                  pace: try c.decode(PaceWeights.self, forKey: .pace),
+        let version = try c.decode(Int.self, forKey: .version)
+        let p = try c.nestedContainer(keyedBy: PaceKeys.self, forKey: .pace)
+        let pace = version == 1
+            ? PaceWeights(slow: try p.decode(Double.self, forKey: .walk), fast: try p.decode(Double.self, forKey: .trot))
+            : PaceWeights(slow: try p.decode(Double.self, forKey: .slow), fast: try p.decode(Double.self, forKey: .fast))
+        self.init(version: version,
+                  pace: pace,
                   breaks: try c.decodeIfPresent(Breaks.self, forKey: .breaks),
                   glanceFacings: try c.decodeIfPresent([Facing].self, forKey: .glanceFacings) ?? [],
                   activities: try c.decode([Activity].self, forKey: .activities))
