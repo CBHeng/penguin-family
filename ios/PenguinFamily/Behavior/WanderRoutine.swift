@@ -128,7 +128,7 @@ nonisolated struct WanderRoutine: Sendable {
     }
 
     /// 走到 `goal` 的步驟：整段用同一種步態；路長時每走幾步停一下（`breaks`），停的點剛好是別隻的格子時不停。
-    /// 已經在那裡時是空的。停的點取在找路找到的路上，舞台從那裡再找路，走的步數不變。
+    /// 已經在那裡時是空的。停的點取在找路找到的路上，模擬從那裡再找路，走的步數不變。
     private func walk(from here: Tile, to goal: Tile, others: Set<Tile>,
                       using rng: inout some RandomNumberGenerator) -> [Step] {
         guard goal != here, let path = RoomPath.find(in: room, from: here, to: goal) else { return [] }

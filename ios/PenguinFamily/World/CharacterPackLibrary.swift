@@ -83,7 +83,7 @@ nonisolated enum CharacterPackLibrary {
     /// 一家有幾隻企鵝。
     static let familySize = 2
 
-    /// 一家的每一隻，照 `packs(in:)` 的順序（第一個是第一隻）：角色包不夠時，缺的位置是 nil（舞台換成替身或灰色剪影）；
+    /// 一家的每一隻，照 `packs(in:)` 的順序（第一個是第一隻）：角色包不夠時，缺的位置是 nil（畫面準備換成替身或灰色剪影）；
     /// 多的角色包不用。
     static func loadFamily(in root: URL? = bundledRoot) -> [LoadedCharacter?] {
         var family: [LoadedCharacter?] = []

@@ -133,12 +133,11 @@ struct PenguinBehaviorTests {
         #expect(Self.results([stand, .arrived]).changed == [true, false])
     }
 
-    @Test func serialCountsEveryChangeOnly() {
+    @Test func sameIntentTwiceIsTwoChanges() {
         let stand = PenguinBehavior.Input.standRequested(facing: .front, seconds: 2)
-        // 同樣的站著要兩次，中間經過待機：意圖一樣，編號不同
+        // 同樣的站著要兩次，中間經過待機：兩次都算改變，模擬才會重新站
         let (changed, behavior) = Self.results([stand, .motionFinished, stand, .ownerTapped, .ownerTapped])
         #expect(changed == [true, true, true, true, false])
-        #expect(behavior.serial == 4)
-        #expect(PenguinBehavior().serial == 0)
+        #expect(behavior.intent == .hello)
     }
 }
