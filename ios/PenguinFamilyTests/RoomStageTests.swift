@@ -53,12 +53,25 @@ struct RoomStageTests {
 
     // MARK: - 畫什麼
 
-    @Test func firstLookIsBetweenThePenguins() throws {
+    @Test func firstLookIsAtTheFirstPenguin() throws {
+        // 作者 2026-11-19 決定：鏡頭優先看第一隻
         let stage = try Self.stage()
         let camera = try #require(stage.camera)
-        #expect(camera.centerX == 208)        // 兩隻腳底 x 的中點
+        #expect(camera.centerX == 192)        // 第一隻腳底的 x
         #expect(camera.centerY == 128)        // 箱庭比畫面矮，上下固定置中
         #expect(stage.zoom == 3)
+    }
+
+    @Test func cameraLooksAtTheNextOneWhenTheFirstIsNotOnStage() throws {
+        let stage = try Self.stage(positions: [])                   // 一開始台上沒有企鵝
+        stage.add(Self.ids[1], at: Self.positions[1])
+        var now = 100.0
+        var tick = stage.update(now: now)
+        while tick.keepRunning && now < 200 {
+            now += 1.0 / 60
+            tick = stage.update(now: now)
+        }
+        #expect(stage.camera?.centerX == 224)                       // 閒置後回到台上的第二隻
     }
 
     @Test func drawsBackgroundFirstThenByDepth() throws {
@@ -67,7 +80,7 @@ struct RoomStageTests {
         #expect(sprites.first?.key == .background)
         #expect(sprites.count == 1 + RoomLayout.indoor.furniture.count + 2)
         #expect(Self.sprite(stage, Self.ids[0])?.width == 20)
-        #expect(Self.sprite(stage, Self.ids[1])?.width == Self.placeholderCanvas.width)   // 第二隻沒有角色包：灰色剪影
+        #expect(Self.sprite(stage, Self.ids[1])?.width == 20)      // 第二隻沒有角色包：借第一隻的形狀塗灰
         // 床在企鵝後面（深度較小），先畫
         let bed = try #require(RoomLayout.indoor.furniture.firstIndex { $0.kind == .bed })
         let bedIndex = try #require(sprites.firstIndex { $0.key == .furniture(bed) })
@@ -77,11 +90,11 @@ struct RoomStageTests {
 
     @Test func everySpriteCanBeDrawn() throws {
         let stage = try Self.stage(withCharacter: [true, false])
-        // 兩隻的造型（第二隻是灰色剪影）；箱庭的背景與家具是多邊形
+        // 兩隻的造型（第二隻是借第一隻形狀塗灰的替身）；箱庭的背景與家具是多邊形
         #expect(stage.rigs().count == 2)
         #expect(stage.polygons().count == 1 + RoomLayout.indoor.furniture.count)
         stage.setIntent(.hello, for: Self.ids[0], now: 0)
-        for t in stride(from: 0.0, through: Motion.hello.duration, by: 0.05) {
+        for t in stride(from: 0.0, through: HelloMotion.standard.duration, by: 0.05) {
             _ = stage.update(now: t)
             for sprite in stage.sprites() { #expect(Self.canDraw(stage, sprite.key), "\(sprite.key) 畫不出來") }
         }
@@ -96,6 +109,21 @@ struct RoomStageTests {
         }
     }
 
+    @Test func missingPackBorrowsTheOtherShapeInGray() throws {
+        // 作者 2026-11-19 決定：第二隻沒有角色包時，借第一隻的形狀塗灰，斜向與走路都和第一隻一樣
+        let stage = try Self.stage(withCharacter: [true, false])
+        let standIn = try #require(stage.rigs()[Self.ids[1]])
+        #expect(standIn.outline.color == VectorRig.placeholderOutline)
+        #expect(Set(standIn.facings.keys) == Set(try VectorRigTests.rig(VectorRigTests.walkingJSON).facings.keys))
+        stage.setIntent(.walk(to: Tile(i: 8, j: 3), pace: .walk), for: Self.ids[1], now: 0)
+        _ = stage.update(now: 1)
+        #expect(stage.pose(of: Self.ids[1]) == (try Self.walking(.walk, .frontRight, at: 1)))   // 斜著走，不是面向鏡頭
+        // 第一隻沒有、第二隻有時也一樣：替身借第二隻的形狀
+        let flipped = try Self.stage(withCharacter: [false, true])
+        #expect(flipped.rigs()[Self.ids[0]]?.outline.color == VectorRig.placeholderOutline)
+        #expect(flipped.rigs()[Self.ids[0]]?.facings.count == standIn.facings.count)
+    }
+
     // MARK: - 各自的動作
 
     @Test func eachPenguinPlaysItsOwnMotion() throws {
@@ -104,15 +132,15 @@ struct RoomStageTests {
         _ = stage.update(now: 0)
         stage.setIntent(.hello, for: first, now: 10)
         var tick = stage.update(now: 10.5)
-        #expect(stage.pose(of: first) == .front(HelloMotion.pose(at: 0.5)))
+        #expect(stage.pose(of: first) == .front(HelloMotion.standard.pose(at: 0.5)))
         #expect(stage.pose(of: second) == .front(.rest))         // 第二隻沒被點，照樣站著
         #expect(tick.draw && tick.keepRunning && tick.motionFinished.isEmpty)
 
         stage.setIntent(.hello, for: second, now: 11)
-        tick = stage.update(now: 10 + Motion.hello.duration)
+        tick = stage.update(now: 10 + HelloMotion.standard.duration)
         #expect(tick.motionFinished == [first])                  // 只有第一隻播完
         #expect(stage.pose(of: first) == .front(.rest))
-        tick = stage.update(now: 11 + Motion.hello.duration)
+        tick = stage.update(now: 11 + HelloMotion.standard.duration)
         #expect(tick.motionFinished == [second])
         tick = stage.update(now: 20)
         #expect(tick.motionFinished.isEmpty && !tick.keepRunning)
@@ -123,9 +151,9 @@ struct RoomStageTests {
         stage.setIntent(.hello, for: Self.ids[0], now: 0)
         stage.setIntent(.hello, for: Self.ids[0], now: 1)
         _ = stage.update(now: 1.5)
-        #expect(stage.pose(of: Self.ids[0]) == .front(HelloMotion.pose(at: 1.5)))
-        #expect(RoomStage.motion(for: .idle) == nil)
-        #expect(RoomStage.motion(for: .hello)?.name == "hello")
+        #expect(stage.pose(of: Self.ids[0]) == .front(HelloMotion.standard.pose(at: 1.5)))
+        #expect(PenguinMotions.standard.motion(for: .idle) == nil)
+        #expect(PenguinMotions.standard.motion(for: .hello)?.name == "hello")
     }
 
     @Test func drawsOnlyWhenSomethingChanged() throws {
@@ -147,7 +175,7 @@ struct RoomStageTests {
     @Test func tapFindsWhichPenguin() throws {
         let stage = try Self.stage(withCharacter: [true, false])
         #expect(stage.penguin(at: try Self.onPenguin(stage, Self.ids[0])) == Self.ids[0])
-        #expect(stage.penguin(at: try Self.onPenguin(stage, Self.ids[1])) == Self.ids[1])   // 灰色剪影也點得到
+        #expect(stage.penguin(at: try Self.onPenguin(stage, Self.ids[1])) == Self.ids[1])   // 替身也點得到
         #expect(stage.penguin(at: .zero) == nil)
     }
 
@@ -196,7 +224,7 @@ struct RoomStageTests {
 
     // MARK: - 閒置後鏡頭回去
 
-    @Test func cameraReturnsBetweenPenguinsAfterIdle() throws {
+    @Test func cameraReturnsToTheFirstPenguinAfterIdle() throws {
         let stage = try Self.stage()
         let home = try #require(stage.camera)
         stage.panChanged(translation: CGSize(width: 150, height: 0), startLocation: .zero, now: 100)
@@ -267,7 +295,7 @@ struct RoomStageTests {
         let stage = try Self.stage()
         stage.setIntent(.hello, for: Self.ids[0], now: 0)
         stage.remove(Self.ids[0])
-        #expect(stage.update(now: Motion.hello.duration + 1).motionFinished.isEmpty)
+        #expect(stage.update(now: HelloMotion.standard.duration + 1).motionFinished.isEmpty)
         stage.setIntent(.hello, for: Self.ids[0], now: 0)          // 不在台上：不做事
         stage.setPosition(Self.positions[1], for: Self.ids[0])
         #expect(stage.onStage == [Self.ids[1]])
@@ -304,8 +332,9 @@ struct RoomStageTests {
         return stage
     }
 
-    /// 假角色往某個方向走時，`Gait` 在第幾秒的姿勢。
-    static func walking(_ gait: Gait, _ facing: Facing, at t: Double) throws -> VectorPose {
+    /// 假角色往某個方向走時，作者定案的步態在第幾秒的姿勢。
+    static func walking(_ pace: PenguinBehavior.Pace, _ facing: Facing, at t: Double) throws -> VectorPose {
+        let gait = PenguinMotions.standard.gait(for: pace)
         let walk = try #require(try VectorRigTests.rig(VectorRigTests.walkingJSON).walk(facing.rawValue))
         return .oblique(facing, gait.vectorPose(at: t, walk: walk))
     }
@@ -363,6 +392,40 @@ struct RoomStageTests {
         #expect(stage.update(now: 4).arrived.count == 1)
     }
 
+    @Test func eachPenguinMovesWithItsOwnMotions() throws {
+        // 作者 2026-11-19 決定：狀態兩隻共用，怎麼動每隻各一份；改第二隻的數字，第一隻照舊
+        let rig = try VectorRigTests.rig(VectorRigTests.walkingJSON)
+        var quick = PenguinMotions.standard
+        quick.walk.cycle = 0.5        // 慢走快一倍：每秒一格
+        quick.hello.wave = 0.4        // 哈囉少揮 1 秒
+        let stage = RoomStage(room: .indoor, cast: [.init(id: Self.ids[0], vector: rig),
+                                                    .init(id: Self.ids[1], vector: rig, motions: quick)])
+        stage.add(Self.ids[0], at: TilePosition(i: 4.5, j: 4.5))
+        stage.add(Self.ids[1], at: TilePosition(i: 4.5, j: 2.5))
+        stage.resize(viewport: CGSize(width: 402, height: 874), displayScale: 3)
+        stage.ownerTouched(now: 1000)
+
+        // 哈囉：各照自己的時間軸，第二隻先播完
+        for id in Self.ids { stage.setIntent(.hello, for: id, now: 0) }
+        _ = stage.update(now: 1)
+        #expect(stage.pose(of: Self.ids[0]) == .front(HelloMotion.standard.pose(at: 1)))
+        #expect(stage.pose(of: Self.ids[1]) == .front(quick.hello.pose(at: 1)))
+        #expect(stage.update(now: quick.hello.duration).motionFinished == [Self.ids[1]])
+        #expect(stage.update(now: HelloMotion.standard.duration).motionFinished == [Self.ids[0]])
+
+        // 慢走：各照自己的步態與速度，往右前走 4 格
+        stage.setIntent(.walk(to: Tile(i: 8, j: 4), pace: .walk), for: Self.ids[0], now: 10)
+        stage.setIntent(.walk(to: Tile(i: 8, j: 2), pace: .walk), for: Self.ids[1], now: 10)
+        _ = stage.update(now: 11)
+        #expect(stage.position(of: Self.ids[0]) == TilePosition(i: 5.0, j: 4.5))      // 每秒半格
+        #expect(stage.position(of: Self.ids[1]) == TilePosition(i: 5.5, j: 2.5))      // 每秒一格
+        #expect(stage.pose(of: Self.ids[0]) == (try Self.walking(.walk, .frontRight, at: 1)))
+        let walk = try #require(rig.walk("frontRight"))
+        #expect(stage.pose(of: Self.ids[1]) == .oblique(.frontRight, quick.walk.vectorPose(at: 1, walk: walk)))
+        #expect(stage.update(now: 14).arrived.map(\.id) == [Self.ids[1]])
+        #expect(stage.update(now: 18).arrived.map(\.id) == [Self.ids[0]])
+    }
+
     @Test func unreachableGoalArrivesRightAwayWhereItStands() throws {
         let stage = try Self.walkingStage()
         stage.setIntent(.walk(to: Tile(i: 7, j: 7), pace: .walk), for: Self.ids[0], now: 0)   // 沙發上
@@ -389,7 +452,7 @@ struct RoomStageTests {
         stage.setIntent(.hello, for: id, now: 3)
         _ = stage.update(now: 3.5)
         #expect(stage.facing(of: id) == .front)
-        #expect(stage.pose(of: id) == .front(HelloMotion.pose(at: 0.5)))
+        #expect(stage.pose(of: id) == .front(HelloMotion.standard.pose(at: 0.5)))
     }
 
     // MARK: - 站著（A1 第 11 項：發呆、東張西望、在家具旁邊待一下）
@@ -408,7 +471,7 @@ struct RoomStageTests {
         #expect(tick.motionFinished == [id])
         #expect(stage.update(now: 14).motionFinished.isEmpty)                      // 只回報一次
         #expect(stage.facing(of: id) == .backRight)                                // 站滿後維持方向
-        #expect(RoomStage.motion(for: .stand(facing: nil, seconds: 1)) == nil)
+        #expect(PenguinMotions.standard.motion(for: .stand(facing: nil, seconds: 1)) == nil)
     }
 
     @Test func standWithoutFacingKeepsTheWalkingDirection() throws {
@@ -439,7 +502,7 @@ struct RoomStageTests {
         stage.setIntent(.stand(facing: .backLeft, seconds: 10), for: id, now: 0, serial: 1)
         stage.setIntent(.hello, for: id, now: 1, serial: 2)
         #expect(stage.facing(of: id) == .front)
-        #expect(stage.update(now: 1 + Motion.hello.duration).motionFinished == [id])   // 哈囉播完
+        #expect(stage.update(now: 1 + HelloMotion.standard.duration).motionFinished == [id])   // 哈囉播完
         #expect(stage.update(now: 20).motionFinished.isEmpty)                          // 原本的站著不再回報
     }
 
@@ -560,12 +623,12 @@ struct RoomStageTests {
 
         stage.setIntent(.hello, for: id, now: 10)
         #expect(stage.update(now: 10.5).draw)
-        #expect(stage.pose(of: id) == .front(HelloMotion.pose(at: 10.5 - 10)))
+        #expect(stage.pose(of: id) == .front(HelloMotion.standard.pose(at: 10.5 - 10)))
         let next = stage.update(now: 10.51)                                       // 每一格都照時間轉
         #expect(next.draw && next.keepRunning)
-        #expect(Self.sprite(stage, id)?.pose == .front(HelloMotion.pose(at: 10.51 - 10)))
+        #expect(Self.sprite(stage, id)?.pose == .front(HelloMotion.standard.pose(at: 10.51 - 10)))
 
-        let end = stage.update(now: 10 + Motion.hello.duration)
+        let end = stage.update(now: 10 + HelloMotion.standard.duration)
         #expect(end.motionFinished == [id] && stage.pose(of: id) == .front(.rest))
         #expect(!stage.update(now: 20).draw)                                      // 站好之後不再重畫
     }
@@ -597,9 +660,130 @@ struct RoomStageTests {
         #expect(PenguinID(character: nil, index: 1).rawValue == "placeholder-2")
     }
 
-    @Test func gameStartsWithOnlyTheFirstPenguinOnStage() {
-        // A1 第 5 項：寫移動（到第 11 項閒晃）的期間第二隻先留在後台；第 12 項第二隻上台時改這個測試
-        #expect(GameView.initialStage(Self.ids) == [Self.ids[0]])
+    @Test func gameStartsWithBothPenguinsOnStage() {
+        // A1 第 12 項：第二隻回到畫面
+        #expect(GameView.initialStage(Self.ids) == Self.ids)
         #expect(GameView.initialStage([]).isEmpty)
+    }
+
+    // MARK: - 兩隻互相讓路（A1 第 12 項，作者 2026-11-19 決定：先等、等不到再繞路）
+
+    /// 每秒 30 格往前跑到 `until` 秒，每一格記下兩隻的距離（格）；回報誰在第幾秒走到哪一格。
+    static func run(_ stage: RoomStage, from start: Double = 0, until end: Double,
+                    closest: inout Double) throws -> [(time: Double, arrival: RoomStage.Arrival)] {
+        var arrivals: [(Double, RoomStage.Arrival)] = []
+        for frame in Int(start * 30)...Int(end * 30) {
+            let now = Double(frame) / 30
+            arrivals += stage.update(now: now).arrived.map { (now, $0) }
+            let (a, b) = (try #require(stage.position(of: ids[0])), try #require(stage.position(of: ids[1])))
+            closest = min(closest, ((a.i - b.i) * (a.i - b.i) + (a.j - b.j) * (a.j - b.j)).squareRoot())
+        }
+        return arrivals
+    }
+
+    @Test func routeGoesAroundAPenguinStandingInTheWay() throws {
+        // 第一隻站在 (6, 4)，第二隻從 (4, 4) 走到 (8, 4)：一開始就繞開，不用停下來等
+        let stage = try Self.stage(positions: [Tile(i: 6, j: 4).center, Tile(i: 4, j: 4).center])
+        stage.setIntent(.walk(to: Tile(i: 8, j: 4), pace: .walk), for: Self.ids[1], now: 0)
+        var closest = Double.infinity
+        let arrivals = try Self.run(stage, until: 14, closest: &closest)
+        #expect(arrivals.map(\.arrival.tile) == [Tile(i: 8, j: 4)])
+        #expect(abs((arrivals.first?.time ?? 0) - 12) < 0.05)                     // 繞一圈 6 步，慢走每秒半格
+        #expect(closest >= 0.999)
+    }
+
+    @Test func waitsWhenSomeoneStepsInTheWayThenGoesAround() throws {
+        // 第二隻從 (4, 4) 走向 (8, 4)，走到一半第一隻站到 (6, 4) 擋住
+        let stage = try Self.stage(positions: [Tile(i: 6, j: 7).center, Tile(i: 4, j: 4).center])
+        stage.ownerTouched(now: 1000)                                               // 鏡頭不自己移動，只看走路
+        let id = Self.ids[1]
+        stage.setIntent(.walk(to: Tile(i: 8, j: 4), pace: .walk), for: id, now: 0)
+        _ = stage.update(now: 1)
+        stage.setPosition(Tile(i: 6, j: 4).center, for: Self.ids[0])
+        var closest = Double.infinity
+        _ = try Self.run(stage, from: 1, until: 2.5, closest: &closest)
+        // 停在 (5, 4) 的中心等，站姿、面向擋住的那一格
+        #expect(stage.position(of: id) == Tile(i: 5, j: 4).center)
+        #expect(stage.pose(of: id) == .oblique(.frontRight, .rest))
+        let waiting = stage.update(now: 2.6)
+        #expect(waiting.keepRunning && !waiting.draw)                               // 等的時候畫面不動
+        // 第二隻等 1 秒後繞路（第一隻等 1.5 秒）
+        _ = try Self.run(stage, from: 2.7, until: 3.0, closest: &closest)
+        #expect(stage.position(of: id) == Tile(i: 5, j: 4).center)
+        _ = try Self.run(stage, from: 3.1, until: 3.5, closest: &closest)
+        #expect(stage.position(of: id) != Tile(i: 5, j: 4).center)
+        #expect(stage.facing(of: id) != .frontRight)                                // 往旁邊繞
+        let arrivals = try Self.run(stage, from: 3.6, until: 20, closest: &closest)
+        #expect(arrivals.map(\.arrival.tile) == [Tile(i: 8, j: 4)])
+        #expect(closest >= 0.999)
+    }
+
+    @Test func givesUpWhenTheGoalIsTaken() throws {
+        // 第一隻站在終點 (8, 4)：第二隻走到 (7, 4) 等，繞不過去，等滿 4 秒就停在那裡算走到
+        let stage = try Self.stage(positions: [Tile(i: 8, j: 4).center, Tile(i: 4, j: 4).center])
+        stage.setIntent(.walk(to: Tile(i: 8, j: 4), pace: .walk), for: Self.ids[1], now: 0)
+        var closest = Double.infinity
+        let arrivals = try Self.run(stage, until: 12, closest: &closest)
+        #expect(arrivals.map(\.arrival.tile) == [Tile(i: 7, j: 4)])
+        let time = try #require(arrivals.first?.time)
+        #expect(time >= 6 + RoomStage.giveUpAfter && time < 6.1 + RoomStage.giveUpAfter)   // 6 秒走到 (7, 4)，再等 4 秒
+        #expect(stage.position(of: Self.ids[1]) == Tile(i: 7, j: 4).center)
+        #expect(closest >= 0.999)
+    }
+
+    @Test func headOnTheyGetPastEachOther() throws {
+        // 迎面走同一排：一隻停下來等，另一隻繞過去，最後都走到
+        let stage = try Self.stage(positions: [Tile(i: 4, j: 4).center, Tile(i: 8, j: 4).center])
+        stage.setIntent(.walk(to: Tile(i: 8, j: 4), pace: .walk), for: Self.ids[0], now: 0)
+        stage.setIntent(.walk(to: Tile(i: 4, j: 4), pace: .walk), for: Self.ids[1], now: 0)
+        var closest = Double.infinity
+        let arrivals = try Self.run(stage, until: 30, closest: &closest)
+        let tiles = Dictionary(uniqueKeysWithValues: arrivals.map { ($0.arrival.id, $0.arrival.tile) })
+        #expect(tiles == [Self.ids[0]: Tile(i: 8, j: 4), Self.ids[1]: Tile(i: 4, j: 4)])
+        #expect(closest >= 0.999)
+    }
+
+    @Test func twoPenguinsWanderWithoutBumpingIntoEachOther() throws {
+        // 和 GameView 一樣接線：兩隻用 App 裡的 wander.json 一起閒晃 5 分鐘（固定亂數），從不疊在一起，也不會卡住
+        let config = try #require(WanderConfig.bundled())
+        let stage = try Self.stage()
+        var behaviors = [PenguinBehavior(), PenguinBehavior()]
+        var routines = Self.ids.map { _ in WanderRoutine(config: config, room: .indoor) }
+        var tiles = Self.positions.map { Tile(containing: $0) }
+        var rng = WanderTests.SeededGenerator(seed: 42)
+        var arrivals = [0, 0]
+        var closest = Double.infinity
+        func send(_ n: Int, _ input: PenguinBehavior.Input, now: Double) {
+            behaviors[n].handle(input)
+            stage.setIntent(behaviors[n].intent, for: Self.ids[n], now: now, serial: behaviors[n].serial)
+        }
+        func wander(_ n: Int, now: Double) {
+            var other = tiles[1 - n]
+            if case .walk(let goal, _) = behaviors[1 - n].intent { other = goal }
+            guard behaviors[n].intent == .idle,
+                  let step = routines[n].next(from: tiles[n], others: [other], now: now, using: &rng) else { return }
+            send(n, step.request, now: now)
+        }
+        for n in 0..<2 { wander(n, now: 0) }
+        for frame in 1...(300 * 30) {
+            let now = Double(frame) / 30
+            let tick = stage.update(now: now)
+            for arrival in tick.arrived {
+                let n = try #require(Self.ids.firstIndex(of: arrival.id))
+                tiles[n] = arrival.tile
+                arrivals[n] += 1
+                send(n, .arrived, now: now)
+                wander(n, now: now)
+            }
+            for id in tick.motionFinished {
+                let n = try #require(Self.ids.firstIndex(of: id))
+                send(n, .motionFinished, now: now)
+                wander(n, now: now)
+            }
+            let (a, b) = (try #require(stage.position(of: Self.ids[0])), try #require(stage.position(of: Self.ids[1])))
+            closest = min(closest, ((a.i - b.i) * (a.i - b.i) + (a.j - b.j) * (a.j - b.j)).squareRoot())
+        }
+        #expect(closest >= 0.999)
+        #expect(arrivals.allSatisfy { $0 >= 10 }, "走到的次數：\(arrivals)")
     }
 }

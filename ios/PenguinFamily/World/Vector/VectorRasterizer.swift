@@ -23,7 +23,7 @@ nonisolated struct RGBABitmap: Equatable, Sendable {
 /// - 外框：外形用外框色填滿、再加粗描一圈。繪圖時先把整隻的外框都畫完，再畫顏色，部件重疊處才不會多出內線。
 /// - 顏色：照順序畫每一層。
 ///
-/// 解析度照最大倍率準備（`pixelsPerUnit` = 每單位最多幾 pt × 螢幕倍率），縮小時交給 mipmap。
+/// 解析度照最大倍率準備（`pixelsPerUnit` = 每單位最多幾 pt × 螢幕倍率，見 `SpriteRenderer.vectorPixelsPerUnit`），縮小時交給 mipmap。
 /// 形狀一個一個分開畫，重疊的地方是聯集（和私有素材 repo 的 SVG 預覽一樣）；`clip` 每一組的形狀取聯集，組與組取交集。
 /// 只畫畫好的方向；翻轉的方向（右前、右後）共用來源的貼圖，繪圖時才翻轉。
 nonisolated enum VectorRasterizer {

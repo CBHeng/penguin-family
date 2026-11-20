@@ -12,18 +12,30 @@ import Foundation
 /// 企鵝用 `PenguinID` 區分，不用編號。
 ///
 /// 走平面向量（ADR 0007）：位置不取整數、走路每一格都前進；企鵝的正面與斜向都照當下的姿勢轉動部件。
-/// 沒有角色包的位置用灰色剪影，它也是向量，只有正面。
+/// 沒有角色包的位置：一家有別隻的角色包時借牠的形狀塗灰（`VectorRig.graySilhouette()`），都沒有時用只有正面的灰色剪影。
+///
+/// 兩隻互相讓路（作者 2026-11-19 決定）：走路時要走進的下一格被別隻佔住，就停在格子中心等；
+/// 等了一陣子還擋著就找一條繞開牠的路（第一隻等久一點，迎面撞上時第二隻先讓），繞不過去、等太久就停在原地算走到。
+/// 鏡頭閒置後回到第一隻身邊（作者 2026-11-19 決定）。
+///
+/// 每隻照自己的動作細節動（`PenguinMotions`，作者 2026-11-19 決定）：哈囉的時間軸、慢走與小跑的步態與速度都看那一隻的。
 final class RoomStage {
     /// 沒碰多久後鏡頭開始回到企鵝身邊（秒）。實機上調。
     static let idleSecondsBeforeReturn: Double = 5
     /// 回去時，以每秒 60 格計，每格走剩下距離的多少；更新率不同時換算成相同的速度。實機上調。
     static let returnStepPer60Hz: Double = 0.08
+    /// 前面那一格被別隻擋住時，等幾秒後試著繞路：第一隻、其他隻。實機上調。
+    static let detourAfter = (lead: 1.5, others: 1.0)
+    /// 繞不過去（例如別隻站在目的地）時，等幾秒就放棄，停在原地算走到。實機上調。
+    static let giveUpAfter: Double = 4
 
-    /// 後台名單的一隻：身分與造型。
+    /// 後台名單的一隻：身分、造型與動作細節。名單的順序就是一家的順序，最前面的是第一隻。
     struct CastMember {
         let id: PenguinID
-        /// 向量造型（ADR 0007）；nil 用灰色剪影（`VectorRig.placeholder`）。
+        /// 向量造型（ADR 0007）；nil 時借名單裡別隻的形狀塗灰，都沒有時用灰色剪影（`VectorRig.placeholder`）。
         var vector: VectorRig? = nil
+        /// 這隻各狀態怎麼動（作者 2026-11-19 決定每隻各一份）；沒有角色包時是作者定案的那一份。
+        var motions: PenguinMotions = .standard
     }
 
     /// 要畫的東西是哪一個。企鵝以身分區分，因為兩隻的造型不同。
@@ -79,6 +91,8 @@ final class RoomStage {
     private struct Penguin {
         let id: PenguinID
         let vector: VectorRig
+        /// 這隻各狀態怎麼動：哈囉照牠的時間軸、走路照牠的步態。
+        let motions: PenguinMotions
         /// 站在地板的哪一點；走路時一直變。
         var position: TilePosition
         var feet: ScenePoint
@@ -109,9 +123,17 @@ final class RoomStage {
     private struct Walk {
         let path: RoomPath
         let gait: Gait
-        let start: Double
-        /// 走了幾秒：步態每一格照這個算姿勢，位置也每一格都前進（ADR 0007）。
-        var elapsed = 0.0
+        /// 照步態速度從這個時間開始走；等別隻讓路時往後推，等的時間不算。
+        var start: Double
+        /// 在路上走了幾格：位置每一格都前進（ADR 0007）；走過格子中心時剛好是整數。
+        var distance = 0.0
+        /// 前面那一格被別隻佔住、停在格子中心等的開始時間；沒在等是 nil。
+        var waitingSince: Double?
+        /// 等的時候，下次試著繞路的時間。
+        var nextDetour: Double?
+
+        /// 走了幾秒：步態照這個算姿勢。
+        var elapsed: Double { distance / gait.tilesPerSecond }
     }
 
     let room: RoomLayout
@@ -123,6 +145,10 @@ final class RoomStage {
     private let roomPolygons: [SpriteKey: [ColoredPolygon]]
     /// 後台名單，依給的順序。
     private let cast: [CastMember]
+    /// 後台名單每一隻實際用的造型（沒有角色包的已經換成替身）。
+    private let castRigs: [PenguinID: VectorRig]
+    /// 後台名單每一隻的動作細節。
+    private let castMotions: [PenguinID: PenguinMotions]
     /// 台上的企鵝，依上台先後；深度相同時後上台的畫在前面。
     private var penguins: [Penguin] = []
     /// 畫面大小（pt）與 1pt 幾個實體像素。還沒量到畫面大小前是 0。
@@ -149,6 +175,10 @@ final class RoomStage {
         Self.createdCount += 1
         self.room = room
         self.cast = cast
+        // 沒有角色包的那隻（作者 2026-11-19 決定）：借一家裡有角色包那隻的形狀塗灰；都沒有時是灰色剪影
+        let standIn = cast.lazy.compactMap(\.vector).first?.graySilhouette() ?? .placeholder
+        castRigs = Dictionary(uniqueKeysWithValues: cast.map { ($0.id, $0.vector ?? standIn) })
+        castMotions = Dictionary(uniqueKeysWithValues: cast.map { ($0.id, $0.motions) })
         let iso = IsoProjection(room: room)
         self.iso = iso
         var polygons: [SpriteKey: [ColoredPolygon]] = [.background: RoomRenderer.background(room)]
@@ -183,9 +213,9 @@ final class RoomStage {
 
     /// 讓後台名單裡的一隻站到 `position` 上台。不在名單裡、或已經在台上時不做事。
     func add(_ id: PenguinID, at position: TilePosition) {
-        guard !penguins.contains(where: { $0.id == id }), let member = cast.first(where: { $0.id == id }) else { return }
-        penguins.append(Penguin(id: id, vector: member.vector ?? .placeholder, position: position,
-                                feet: iso.feet(at: position)))
+        guard !penguins.contains(where: { $0.id == id }), let rig = castRigs[id] else { return }
+        penguins.append(Penguin(id: id, vector: rig, motions: castMotions[id] ?? .standard,
+                                position: position, feet: iso.feet(at: position)))
         changed()
     }
 
@@ -201,10 +231,8 @@ final class RoomStage {
     /// 箱庭的多邊形：背景與每件家具。繪圖層載入時一次切成三角形送進 GPU。
     func polygons() -> [SpriteKey: [ColoredPolygon]] { roomPolygons }
 
-    /// 後台名單的每一隻的造型（沒有角色包的是灰色剪影），包含還沒上台的；繪圖層載入時一次把部件畫成貼圖。
-    func rigs() -> [PenguinID: VectorRig] {
-        Dictionary(uniqueKeysWithValues: cast.map { ($0.id, $0.vector ?? .placeholder) })
-    }
+    /// 後台名單的每一隻的造型（沒有角色包的是替身），包含還沒上台的；繪圖層載入時一次把部件畫成貼圖。
+    func rigs() -> [PenguinID: VectorRig] { castRigs }
 
     // MARK: - 外面告訴我們的事
 
@@ -233,7 +261,7 @@ final class RoomStage {
               newIntent != penguins[index].intent || serial != penguins[index].serial else { return }
         penguins[index].intent = newIntent
         penguins[index].serial = serial
-        penguins[index].playing = Self.motion(for: newIntent).map { ($0, now) }
+        penguins[index].playing = penguins[index].motions.motion(for: newIntent).map { ($0, now) }
         if let walk = penguins[index].walking { penguins[index].midway = Self.midway(of: walk) }
         penguins[index].walking = nil
         penguins[index].standUntil = nil
@@ -246,12 +274,12 @@ final class RoomStage {
         case .hello:
             penguins[index].facing = .front
         case .walk(let goal, let pace):
-            let gait = Self.gait(for: pace)
+            let gait = penguins[index].motions.gait(for: pace)
             let (path, walked) = route(index, to: goal)
             // 已經走了一段（從半路出發）時，把開始的時間往前推，位置與步態都從那裡接著算
             let seconds = walked / gait.tilesPerSecond
             penguins[index].midway = nil
-            penguins[index].walking = Walk(path: path, gait: gait, start: now - seconds, elapsed: seconds)
+            penguins[index].walking = Walk(path: path, gait: gait, start: now - seconds, distance: walked)
             moveAlong(index, distance: walked)
         }
         changed()
@@ -264,22 +292,6 @@ final class RoomStage {
         penguins[index].position = position
         penguins[index].feet = iso.feet(at: position)
         changed()
-    }
-
-    /// 走路的快慢用哪個步態。
-    static func gait(for pace: PenguinBehavior.Pace) -> Gait {
-        switch pace {
-        case .walk: .walk
-        case .trot: .trot
-        }
-    }
-
-    /// 意圖要播哪個正面動作；待機、站著與走路不播（走路用斜向的步態）。
-    static func motion(for intent: PenguinBehavior.Intent) -> Motion? {
-        switch intent {
-        case .idle, .stand, .walk: nil
-        case .hello: .hello
-        }
     }
 
     // MARK: - 手勢（座標是畫面上的 pt，左上角為原點）
@@ -472,11 +484,12 @@ final class RoomStage {
                       width: canvas.canvas.width, height: canvas.canvas.height, pose: pose)
     }
 
-    /// 企鵝這一格的樣子：斜向用步態在走了幾秒時的姿勢，站著時是站姿；正面用哈囉等動作的姿勢。
+    /// 企鵝這一格的樣子：斜向用步態在走了幾秒時的姿勢，站著、等別隻讓路時是站姿；正面用哈囉等動作的姿勢。
     /// 造型沒有這個斜向時（例如灰色剪影）面向鏡頭。
     private static func pose(of penguin: Penguin) -> VectorPose {
         if penguin.facing != .front, let walk = penguin.vector.walk(penguin.facing.rawValue) {
-            return .oblique(penguin.facing, penguin.walking.map { $0.gait.vectorPose(at: $0.elapsed, walk: walk) } ?? .rest)
+            guard let walking = penguin.walking, walking.waitingSince == nil else { return .oblique(penguin.facing, .rest) }
+            return .oblique(penguin.facing, walking.gait.vectorPose(at: walking.elapsed, walk: walk))
         }
         return .front(penguin.pose)
     }
@@ -484,21 +497,87 @@ final class RoomStage {
     // MARK: - 走路
 
     /// 推進一隻正在走的企鵝：位置與步態每一格都照經過的時間前進（ADR 0007）；走到時回報。
+    /// 站在格子中心、要走進下一格之前，先看那一格有沒有被別隻佔住，佔住就停下來等（見 `wait`）。
     private func advanceWalk(_ index: Int, now: Double) -> Arrival? {
         guard var walk = penguins[index].walking else { return nil }
-        let elapsed = max(0, now - walk.start)
-        let distance = walk.gait.tilesPerSecond * elapsed
-        if distance >= Double(walk.path.steps) {
-            moveAlong(index, distance: Double(walk.path.steps))
+        let tiles = walk.path.tiles
+        let target = min(walk.gait.tilesPerSecond * max(0, now - walk.start), Double(walk.path.steps))
+        while walk.distance < target {
+            let k = Int(walk.distance.rounded(.down))
+            if Double(k) == walk.distance, isTaken(tiles[k + 1], except: index) {
+                return wait(index, walk, now: now)
+            }
+            walk.distance = min(target, Double(k + 1))
+        }
+        walk.waitingSince = nil
+        walk.nextDetour = nil
+        penguins[index].walking = walk
+        moveAlong(index, distance: walk.distance)
+        needsDraw = true
+        guard walk.distance >= Double(walk.path.steps) else { return nil }
+        penguins[index].walking = nil
+        return Arrival(id: penguins[index].id, tile: walk.path.goal)
+    }
+
+    /// 前面那一格被別隻佔住：停在格子中心等，站姿、面向那一格（作者 2026-11-19 決定：先等、等不到再繞路）。
+    /// 等的時間不算進走路，對方走開後從這裡接著走。等了 `detourAfter` 秒還擋著，就找一條繞開別隻的路；
+    /// 繞不過去就過一陣子再試，等滿 `giveUpAfter` 秒就放棄，停在這一格算走到。
+    private func wait(_ index: Int, _ walk: Walk, now: Double) -> Arrival? {
+        var walk = walk
+        let here = walk.path.tiles[Int(walk.distance)]
+        walk.start = now - walk.elapsed
+        if walk.waitingSince == nil {
+            walk.waitingSince = now
+            walk.nextDetour = now + detourDelay(for: index)
+            needsDraw = true
+        }
+        penguins[index].walking = walk
+        moveAlong(index, distance: walk.distance)   // 這一格可能先走到了格子中心才停
+        if now - (walk.waitingSince ?? now) >= Self.giveUpAfter {
             penguins[index].walking = nil
             needsDraw = true
-            return Arrival(id: penguins[index].id, tile: walk.path.goal)
+            return Arrival(id: penguins[index].id, tile: here)
         }
-        walk.elapsed = elapsed
-        penguins[index].walking = walk
-        moveAlong(index, distance: distance)
-        needsDraw = true
+        if let next = walk.nextDetour, now >= next {
+            if let detour = RoomPath.find(in: room, from: here, to: walk.path.goal, avoiding: takenByOthers(except: index)) {
+                penguins[index].walking = Walk(path: detour, gait: walk.gait, start: now)
+                moveAlong(index, distance: 0)
+                needsDraw = true
+            } else {
+                let retry = now + detourDelay(for: index)   // 先算好：改 penguins 的同時不能再讀它
+                penguins[index].walking?.nextDetour = retry
+            }
+        }
         return nil
+    }
+
+    /// 等幾秒後試著繞路：第一隻等久一點，迎面撞上時第二隻先讓。
+    private func detourDelay(for index: Int) -> Double {
+        index == leadIndex ? Self.detourAfter.lead : Self.detourAfter.others
+    }
+
+    /// 一隻企鵝佔住的格子：站的那一格，在兩格之間時是兩格；正在走、沒在等的話，再加上要走進去的下一格，
+    /// 兩隻同時要走進同一格時才不會撞在一起。
+    private static func taken(by penguin: Penguin) -> Set<Tile> {
+        let p = penguin.position
+        var tiles: Set<Tile> = [Tile(i: Int((p.i - 0.5).rounded(.down)), j: Int((p.j - 0.5).rounded(.down))),
+                                Tile(i: Int((p.i - 0.5).rounded(.up)), j: Int((p.j - 0.5).rounded(.up)))]
+        if let walk = penguin.walking, walk.waitingSince == nil {
+            let next = Int(walk.distance.rounded(.down)) + 1
+            if next < walk.path.tiles.count { tiles.insert(walk.path.tiles[next]) }
+        }
+        return tiles
+    }
+
+    /// 台上別隻佔住的格子。
+    private func takenByOthers(except index: Int) -> Set<Tile> {
+        penguins.indices.reduce(into: Set<Tile>()) { tiles, i in
+            if i != index { tiles.formUnion(Self.taken(by: penguins[i])) }
+        }
+    }
+
+    private func isTaken(_ tile: Tile, except index: Int) -> Bool {
+        takenByOthers(except: index).contains(tile)
     }
 
     /// 從現在的位置走到 `goal` 的路，與這條路上已經走了幾格。
@@ -506,14 +585,19 @@ final class RoomStage {
     /// - 停在兩格之間：往前走到 `to` 或回頭走到 `from`，挑總步數少的（一樣時往前），再從那一格找路；
     ///   路的第一步就是停的那一步，所以位置接得上、不會跳。
     /// - 到不了：停在原地；停在兩格之間時走到比較近的那一格。
+    /// - 先找繞開別隻的路；找不到（例如別隻站在目的地）就走一般的路，走到牠前面再等。
     private func route(_ index: Int, to goal: Tile) -> (path: RoomPath, walked: Double) {
+        let others = takenByOthers(except: index)
+        func find(from start: Tile) -> RoomPath? {
+            RoomPath.find(in: room, from: start, to: goal, avoiding: others) ?? RoomPath.find(in: room, from: start, to: goal)
+        }
         guard let m = penguins[index].midway else {
             let here = Tile(containing: penguins[index].position)
-            return (RoomPath.find(in: room, from: here, to: goal) ?? RoomPath(tiles: [here]), 0)
+            return (find(from: here) ?? RoomPath(tiles: [here]), 0)
         }
         // 兩種走法：這一步從 back 走向 end，已經走了 walked
         let ways = [(back: m.from, end: m.to, walked: m.fraction), (back: m.to, end: m.from, walked: 1 - m.fraction)]
-        let found = ways.compactMap { way in RoomPath.find(in: room, from: way.end, to: goal).map { (way: way, rest: $0) } }
+        let found = ways.compactMap { way in find(from: way.end).map { (way: way, rest: $0) } }
         func cost(_ option: (way: (back: Tile, end: Tile, walked: Double), rest: RoomPath)) -> Double {
             1 - option.way.walked + Double(option.rest.steps)
         }
@@ -528,7 +612,7 @@ final class RoomStage {
     private static func midway(of walk: Walk) -> Midway? {
         let tiles = walk.path.tiles
         guard tiles.count > 1 else { return nil }
-        let distance = walk.gait.tilesPerSecond * walk.elapsed
+        let distance = walk.distance
         let segment = min(Int(distance.rounded(.down)), tiles.count - 2)
         let fraction = distance - Double(segment)
         guard fraction > 0, fraction < 1 else { return nil }
@@ -555,13 +639,16 @@ final class RoomStage {
 
     // MARK: - 小工具
 
-    /// 鏡頭要回到哪裡：台上所有企鵝身體中央的中點（腳底上方約 16 單位）。台上沒有企鵝時是箱庭中央。
+    /// 鏡頭優先看的那隻在 `penguins` 的位置：後台名單裡最前面、而且在台上的（第一隻不在台上時是下一隻）。
+    private var leadIndex: Int? {
+        cast.lazy.compactMap { member in self.penguins.firstIndex { $0.id == member.id } }.first
+    }
+
+    /// 鏡頭要回到哪裡：第一隻身體中央（腳底上方約 16 單位），作者 2026-11-19 決定優先看第一隻。
+    /// 台上沒有企鵝時是箱庭中央。
     private var focus: (x: Double, y: Double) {
-        guard !penguins.isEmpty else { return (Double(iso.canvasWidth) / 2, Double(iso.canvasHeight) / 2) }
-        let n = Double(penguins.count)
-        let x = penguins.reduce(0.0) { $0 + $1.feet.x } / n
-        let y = penguins.reduce(0.0) { $0 + $1.feet.y - 16 } / n
-        return (x, y)
+        guard let lead = leadIndex else { return (Double(iso.canvasWidth) / 2, Double(iso.canvasHeight) / 2) }
+        return (penguins[lead].feet.x, penguins[lead].feet.y - 16)
     }
 
     private func zoomLimits() -> RoomZoom {

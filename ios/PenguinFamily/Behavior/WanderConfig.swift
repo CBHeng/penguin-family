@@ -3,7 +3,8 @@ import os
 
 /// 閒晃的資料：每種活動的權重、冷卻時間、待多久（遊戲設計：行為、權重與冷卻時間寫成資料，調整時不用改程式）。
 ///
-/// 放在公開 repo 的 `Resources/wander.json`，兩隻共用（作者 2026-11-19 決定）；數字在實機上調。
+/// 每隻各一份（作者 2026-11-19 決定兩隻各自獨立）：角色包的 `wander.json`，由私有素材 repo 匯出。
+/// 公開 repo 的 `Resources/wander.json` 是預設，給沒有角色包、或角色包沒帶這個檔的那隻。數字在實機上調。
 /// 秒數、格數都寫成範圍 `[最少, 最多]`，每次在範圍裡隨機挑。
 ///
 /// - `version`：格式版本，目前是 1。
@@ -16,11 +17,13 @@ import os
 ///   - `stroll`：隨便走走，走到 `tiles` 步遠的地方，停 `seconds` 秒。
 ///   - `zoneOut`：發呆，原地站 `seconds` 秒。`facing` 不寫就維持原本的方向（作者 2026-11-19 決定）。
 ///   - `lookAround`：東張西望，連續看 `glances` 個方向，每個看 `seconds` 秒。
+///   - `stayClose`：走去黏著另一隻：走到牠旁邊緊鄰的一格，面向牠待 `seconds` 秒（作者 2026-11-19 決定）。
+///     牠正在走的話，走去牠要去的那一格旁邊。台上只有自己時不挑。
 nonisolated struct WanderConfig: Decodable, Equatable, Sendable {
     static let supportedVersion = 1
 
     enum Kind: String, Decodable, Sendable {
-        case visit, stroll, zoneOut, lookAround
+        case visit, stroll, zoneOut, lookAround, stayClose
     }
 
     struct Activity: Decodable, Equatable, Sendable {
@@ -83,7 +86,7 @@ nonisolated struct WanderConfig: Decodable, Equatable, Sendable {
                 guard activity.target != nil else { throw WanderConfigError.invalid("\(name).target") }
             case .stroll:
                 guard let tiles = activity.tiles, tiles.lowerBound >= 1 else { throw WanderConfigError.invalid("\(name).tiles") }
-            case .zoneOut:
+            case .zoneOut, .stayClose:
                 break
             case .lookAround:
                 guard let glances = activity.glances, glances.lowerBound >= 1 else {
@@ -97,7 +100,7 @@ nonisolated struct WanderConfig: Decodable, Equatable, Sendable {
 
     private static let log = Logger(subsystem: "PenguinFamily", category: "Wander")
 
-    /// App 裡的 `wander.json`。讀不到或內容不合理時是 nil（企鵝只站著，不閒晃）；`WanderTests` 守著這個檔案。
+    /// App 裡的預設 `wander.json`。讀不到或內容不合理時是 nil（沒帶自己閒晃資料的企鵝只站著）；`WanderTests` 守著這個檔案。
     static func bundled(_ bundle: Bundle = .main) -> WanderConfig? {
         do {
             guard let url = bundle.url(forResource: "wander", withExtension: "json") else {

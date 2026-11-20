@@ -2,6 +2,7 @@
 ///
 /// 依 `WanderConfig` 的權重挑一種活動，冷卻中的先不挑，再拆成一步步交給狀態機：走去某一格、站著幾秒。
 /// 一種活動的步驟用完才挑下一種；被主人打斷（哈囉）後接著做剩下的步驟。
+/// 別隻企鵝在哪由外面給：不挑牠們的格子當目的地或半路停的地方，「走去黏著另一隻」走到牠們旁邊（A1 第 12 項）。
 /// 不碰畫面；時間（秒）與亂數由外面給，所以可以用固定的亂數測。
 nonisolated struct WanderRoutine: Sendable {
     /// 交給狀態機的一步。
@@ -36,24 +37,27 @@ nonisolated struct WanderRoutine: Sendable {
     }
 
     /// 下一步。這次活動的步驟用完時挑新的活動；`here` 是企鵝現在站的格子，`now` 是現在的時間（秒）。
+    /// `others` 是台上別隻的格子（正在走的話是牠要去的那一格）。
     /// 什麼都做不了時是 nil（例如資料裡的活動在這個房間都走不到）。
-    mutating func next(from here: Tile, now: Double, using rng: inout some RandomNumberGenerator) -> Step? {
-        if plan.isEmpty { plan = start(from: here, now: now, using: &rng) }
+    mutating func next(from here: Tile, others: Set<Tile> = [], now: Double,
+                       using rng: inout some RandomNumberGenerator) -> Step? {
+        if plan.isEmpty { plan = start(from: here, others: others, now: now, using: &rng) }
         return plan.isEmpty ? nil : plan.removeFirst()
     }
 
     // MARK: - 挑活動
 
     /// 挑一種活動、排好步驟。先從冷卻好的挑；全部在冷卻時，才從冷卻中的挑（不讓牠呆站著沒事做）。
-    /// 挑到的在這裡做不了（例如走不到）就換一個。
-    private mutating func start(from here: Tile, now: Double, using rng: inout some RandomNumberGenerator) -> [Step] {
+    /// 挑到的在這裡做不了（例如走不到、台上沒有別隻可以黏）就換一個。
+    private mutating func start(from here: Tile, others: Set<Tile>, now: Double,
+                                using rng: inout some RandomNumberGenerator) -> [Step] {
         let counts = room.stepCounts(from: here)
         let candidates = config.activities.filter { $0.weight > 0 }
         let ready = candidates.filter { now - (lastStarted[$0.id] ?? -.infinity) >= $0.cooldown }
         let cooling = candidates.filter { !ready.contains($0) }
         for var pool in [ready, cooling] {
             while let chosen = Self.pick(pool, weight: \.weight, using: &rng) {
-                let steps = steps(for: chosen, from: here, counts: counts, using: &rng)
+                let steps = steps(for: chosen, from: here, others: others, counts: counts, using: &rng)
                 if !steps.isEmpty {
                     lastStarted[chosen.id] = now
                     activity = chosen.id
@@ -81,22 +85,32 @@ nonisolated struct WanderRoutine: Sendable {
     // MARK: - 排步驟
 
     /// 一種活動在這裡的步驟；做不了時是空的。`counts` 是從這裡走到每一格要幾步。
-    private func steps(for activity: WanderConfig.Activity, from here: Tile, counts: [Tile: Int],
+    private func steps(for activity: WanderConfig.Activity, from here: Tile, others: Set<Tile>, counts: [Tile: Int],
                        using rng: inout some RandomNumberGenerator) -> [Step] {
         switch activity.kind {
         case .visit:
             guard let target = activity.target else { return [] }
-            let spots = room.spots(beside: target).filter { counts[$0.tile] != nil }
+            let spots = room.spots(beside: target).filter { counts[$0.tile] != nil && !others.contains($0.tile) }
             guard let spot = spots.randomElement(using: &rng) else { return [] }
-            let walking = walk(from: here, to: spot.tile, using: &rng)
+            let walking = walk(from: here, to: spot.tile, others: others, using: &rng)
             return walking + [.stand(facing: spot.facing, seconds: Double.random(in: activity.seconds, using: &rng))]
         case .stroll:
             guard let range = activity.tiles else { return [] }
             // 字典的順序每次執行都不同，排好再挑，固定的亂數才會挑到同一格
-            let tiles = counts.filter { range.contains($0.value) }.keys.sorted { ($0.i, $0.j) < ($1.i, $1.j) }
+            let tiles = counts.filter { range.contains($0.value) && !others.contains($0.key) }.keys
+                .sorted { ($0.i, $0.j) < ($1.i, $1.j) }
             guard let goal = tiles.randomElement(using: &rng) else { return [] }
-            let walking = walk(from: here, to: goal, using: &rng)
+            let walking = walk(from: here, to: goal, others: others, using: &rng)
             return walking + [.stand(facing: nil, seconds: Double.random(in: activity.seconds, using: &rng))]
+        case .stayClose:
+            // 別隻旁邊緊鄰、走得到、沒被佔住的格子，挑最近的（一樣近時隨機），走過去面向牠
+            let spots = others.sorted { ($0.i, $0.j) < ($1.i, $1.j) }
+                .flatMap { room.spots(around: $0) }
+                .filter { counts[$0.tile] != nil && !others.contains($0.tile) }
+            guard let nearest = spots.compactMap({ counts[$0.tile] }).min(),
+                  let spot = spots.filter({ counts[$0.tile] == nearest }).randomElement(using: &rng) else { return [] }
+            let walking = walk(from: here, to: spot.tile, others: others, using: &rng)
+            return walking + [.stand(facing: spot.facing, seconds: Double.random(in: activity.seconds, using: &rng))]
         case .zoneOut:
             return [.stand(facing: activity.facing, seconds: Double.random(in: activity.seconds, using: &rng))]
         case .lookAround:
@@ -113,9 +127,10 @@ nonisolated struct WanderRoutine: Sendable {
         }
     }
 
-    /// 走到 `goal` 的步驟：整段用同一種步態；路長時每走幾步停一下（`breaks`）。已經在那裡時是空的。
-    /// 停的點取在找路找到的路上，舞台從那裡再找路，走的步數不變。
-    private func walk(from here: Tile, to goal: Tile, using rng: inout some RandomNumberGenerator) -> [Step] {
+    /// 走到 `goal` 的步驟：整段用同一種步態；路長時每走幾步停一下（`breaks`），停的點剛好是別隻的格子時不停。
+    /// 已經在那裡時是空的。停的點取在找路找到的路上，舞台從那裡再找路，走的步數不變。
+    private func walk(from here: Tile, to goal: Tile, others: Set<Tile>,
+                      using rng: inout some RandomNumberGenerator) -> [Step] {
         guard goal != here, let path = RoomPath.find(in: room, from: here, to: goal) else { return [] }
         let pace: PenguinBehavior.Pace = Self.pick([PenguinBehavior.Pace.walk, .trot], weight: {
             $0 == .walk ? config.pace.walk : config.pace.trot
@@ -126,8 +141,11 @@ nonisolated struct WanderRoutine: Sendable {
             while true {
                 let next = at + Int.random(in: breaks.everyTiles, using: &rng)
                 guard path.steps - next >= Self.minimumStepsAfterBreak else { break }
-                steps.append(.walk(to: path.tiles[next], pace: pace))
-                steps.append(.stand(facing: nil, seconds: Double.random(in: breaks.seconds, using: &rng)))
+                let seconds = Double.random(in: breaks.seconds, using: &rng)
+                if !others.contains(path.tiles[next]) {
+                    steps.append(.walk(to: path.tiles[next], pace: pace))
+                    steps.append(.stand(facing: nil, seconds: seconds))
+                }
                 at = next
             }
         }

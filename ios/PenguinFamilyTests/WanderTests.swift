@@ -41,11 +41,11 @@ struct WanderTests {
     }
 
     /// 做完一整個活動：第一步挑活動，再把剩下的步驟拿完。
-    static func wholeActivity(_ routine: inout WanderRoutine, from here: Tile = here, now: Double = 0,
-                              rng: inout SeededGenerator) -> [WanderRoutine.Step] {
+    static func wholeActivity(_ routine: inout WanderRoutine, from here: Tile = here, others: Set<Tile> = [],
+                              now: Double = 0, rng: inout SeededGenerator) -> [WanderRoutine.Step] {
         var steps: [WanderRoutine.Step] = []
         repeat {
-            guard let step = routine.next(from: here, now: now, using: &rng) else { break }
+            guard let step = routine.next(from: here, others: others, now: now, using: &rng) else { break }
             steps.append(step)
         } while !routine.plan.isEmpty
         return steps
@@ -54,11 +54,29 @@ struct WanderTests {
     // MARK: - 資料
 
     @Test func bundledFileIsValid() throws {
-        let config = try #require(WanderConfig.bundled(), "wander.json 讀不進來")
-        // 每個「走去家具旁邊」在屋內都有站得到的位置
+        try Self.expectUsable(try #require(WanderConfig.bundled(), "wander.json 讀不進來"), "預設")
+    }
+
+    /// 測試用的角色包裡有 `wander.json` 的（每隻自己的閒晃，作者 2026-11-19 決定）。不進 git，乾淨 clone 下來是空的。
+    static let packsWithWander = VectorPackParityTests.allPacks.filter {
+        FileManager.default.fileExists(atPath: $0.appending(path: "wander.json").path)
+    }
+
+    /// 訊息只寫第幾隻，不寫角色 id（角色名稱只能出現在私有 repo）。
+    @Test(.enabled(if: !packsWithWander.isEmpty, "沒有角色包自己的閒晃資料（乾淨 clone），跳過"))
+    func packFilesAreValid() throws {
+        for (i, pack) in Self.packsWithWander.enumerated() {
+            let data = try Data(contentsOf: pack.appending(path: "wander.json"))
+            let config = try #require(try? WanderConfig.decode(data), "第 \(i + 1) 個角色包的 wander.json 讀不進來")
+            try Self.expectUsable(config, "第 \(i + 1) 個角色包")
+        }
+    }
+
+    /// 每個「走去家具旁邊」在屋內都有站得到的位置。
+    static func expectUsable(_ config: WanderConfig, _ label: String) throws {
         for activity in config.activities where activity.kind == .visit {
             let target = try #require(activity.target)
-            #expect(!Self.room.spots(beside: target).isEmpty, "\(activity.id) 在屋內沒有站得到的位置")
+            #expect(!room.spots(beside: target).isEmpty, "\(label)：\(activity.id) 在屋內沒有站得到的位置")
         }
     }
 
@@ -99,6 +117,7 @@ struct WanderTests {
             return (try? WanderConfig.decode(Data(json.utf8))) != nil
         }
         #expect(decodes(#"{ "id": "z", "kind": "zoneOut", "weight": 1, "cooldown": 0, "seconds": [5, 10] }"#))
+        #expect(decodes(#"{ "id": "c", "kind": "stayClose", "weight": 1, "cooldown": 0, "seconds": [5, 10] }"#))
         #expect(!decodes(#"{ "id": "z", "kind": "zoneOut", "weight": 1, "cooldown": 0, "seconds": [10, 5] }"#))   // 範圍顛倒
         #expect(!decodes(#"{ "id": "v", "kind": "visit", "target": "kitchen", "weight": 1, "cooldown": 0, "seconds": [1, 2] }"#))
         #expect(!decodes(#"{ "id": "x", "kind": "dance", "weight": 1, "cooldown": 0, "seconds": [1, 2] }"#))
@@ -289,6 +308,75 @@ struct WanderTests {
             return
         }
         #expect(pace == .trot)
+    }
+
+    // MARK: - 兩隻（A1 第 12 項）
+
+    @Test func stayCloseEndsNextToTheOtherFacingIt() {
+        // 另一隻在 (7, 4)：走到最近的一側 (6, 4)，面向牠（往右前）
+        var routine = WanderRoutine(config: Self.config([Self.activity("c", .stayClose, seconds: 5...10)]), room: Self.room)
+        var rng = SeededGenerator(seed: 14)
+        for t in 0..<10 {
+            let steps = Self.wholeActivity(&routine, others: [Tile(i: 7, j: 4)], now: Double(t), rng: &rng)
+            guard steps.count == 2, case .walk(Tile(i: 6, j: 4), .walk) = steps[0],
+                  case .stand(.frontRight?, let seconds) = steps[1] else {
+                Issue.record("\(steps)")
+                continue
+            }
+            #expect((5...10).contains(seconds))
+        }
+    }
+
+    @Test func stayCloseWhenAlreadyBesideJustTurns() {
+        // 另一隻就在左前方的格子：不用走，直接轉向牠
+        var routine = WanderRoutine(config: Self.config([Self.activity("c", .stayClose)]), room: Self.room)
+        var rng = SeededGenerator(seed: 15)
+        #expect(Self.wholeActivity(&routine, others: [Tile(i: 4, j: 5)], rng: &rng) == [.stand(facing: .frontLeft, seconds: 1)])
+    }
+
+    @Test func stayCloseNeedsSomeoneElse() {
+        // 台上只有自己：不挑「黏著」，改做別的
+        var routine = WanderRoutine(config: Self.config([Self.activity("c", .stayClose, weight: 100), Self.activity("z", .zoneOut)]),
+                                    room: Self.room)
+        var rng = SeededGenerator(seed: 16)
+        for t in 0..<10 {
+            #expect(routine.next(from: Self.here, now: Double(t), using: &rng) == .stand(facing: nil, seconds: 1))
+        }
+    }
+
+    @Test func goalsAreNeverWhereTheOtherIs() {
+        var rng = SeededGenerator(seed: 17)
+        // 隨便走走 1 步遠：四個方向有三格是別隻的，只剩 (4, 3)
+        var stroll = Self.activity("s", .stroll)
+        stroll.tiles = 1...1
+        var strolling = WanderRoutine(config: Self.config([stroll]), room: Self.room)
+        let around: Set<Tile> = [Tile(i: 5, j: 4), Tile(i: 3, j: 4), Tile(i: 4, j: 5)]
+        for t in 0..<10 {
+            let steps = Self.wholeActivity(&strolling, others: around, now: Double(t), rng: &rng)
+            #expect(steps.first == .walk(to: Tile(i: 4, j: 3), pace: .walk))
+        }
+        // 走去窗邊：窗下三格有兩格是別隻的
+        var visiting = WanderRoutine(config: Self.config([Self.visit(.window)]), room: Self.room)
+        for t in 0..<10 {
+            let steps = Self.wholeActivity(&visiting, others: [Tile(i: 6, j: 0), Tile(i: 7, j: 0)], now: Double(t), rng: &rng)
+            #expect(steps.first == .walk(to: Tile(i: 8, j: 0), pace: .walk))
+        }
+    }
+
+    @Test func doesNotStopOnTheOthersTileOnTheWay() throws {
+        // 每走 3 步停一下，但停的那一格剛好是別隻的：那一次不停，接著走
+        var routine = WanderRoutine(config: Self.config([Self.visit(.storageBox)],
+                                                        breaks: .init(everyTiles: 3...3, seconds: 0.5...0.5)),
+                                    room: Self.room)
+        var rng = SeededGenerator(seed: 10)
+        let start = Tile(i: 11, j: 0)
+        let plain = Self.wholeActivity(&routine, from: start, rng: &rng)
+        guard case .walk(let firstBreak, _) = plain.first else { Issue.record("\(plain)"); return }
+        var avoiding = WanderRoutine(config: routine.config, room: Self.room)
+        rng = SeededGenerator(seed: 10)
+        let steps = Self.wholeActivity(&avoiding, from: start, others: [firstBreak], rng: &rng)
+        #expect(!steps.contains(.walk(to: firstBreak, pace: .walk)))
+        #expect(steps.count == plain.count - 2)                                     // 少停一次
     }
 
     @Test func stepsBecomeRequests() {

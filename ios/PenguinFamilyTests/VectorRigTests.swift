@@ -194,7 +194,7 @@ struct VectorRigTests {
 
     @Test func gaitPoseIsSmoothAndLandsAtTheRightTime() throws {
         let walk = try #require(try Self.rig(Self.walkingJSON).walk("frontLeft"))
-        for gait in Gait.all {
+        for (label, gait) in [("walk", Gait.standardWalk), ("trot", .standardTrot)] {
             var last = gait.vectorPose(at: 0, walk: walk)
             #expect(abs(last.dip - Double(gait.dip)) < 1e-12)                    // 換腳落地時最低
             for k in 1...1000 {
@@ -203,7 +203,7 @@ struct VectorRigTests {
                 #expect(abs(pose.swayDegrees - last.swayDegrees) < 0.1 && abs(pose.dip - last.dip) < 0.05)
                 for (name, o) in pose.feet {
                     let p = try #require(last.feet[name])
-                    #expect(abs(o.dx - p.dx) < 0.05 && abs(o.dy - p.dy) < 0.05, "\(gait.name) \(name) at \(k)")
+                    #expect(abs(o.dx - p.dx) < 0.05 && abs(o.dy - p.dy) < 0.05, "\(label) \(name) at \(k)")
                 }
                 last = pose
             }
@@ -251,6 +251,30 @@ struct VectorRigTests {
             VectorRasterizer.rasterize(rig, facing: facing, pixelsPerUnit: 4).reduce(total) { $0 + $1.byteCount * 4 / 3 }
         }
         #expect(drawn > 0 && VectorRasterizer.textureBytes(rig, pixelsPerUnit: 4) == drawn)
+    }
+
+    // MARK: - 替身（作者 2026-11-19 決定：沒有角色包的那隻，借別隻的形狀塗灰）
+
+    @Test func graySilhouetteKeepsTheShapesButPaintsThemGray() throws {
+        let rig = try Self.rig(Self.walkingJSON)
+        let gray = rig.graySilhouette()
+        try gray.validate()
+        #expect(gray.outline.color == VectorRig.placeholderOutline && gray.outline.width == rig.outline.width)
+        #expect(Set(gray.facings.keys) == Set(rig.facings.keys) && Set(gray.mirrors.keys) == Set(rig.mirrors.keys))
+        for (name, facing) in rig.facings {
+            let g = try #require(gray.facings[name])
+            #expect(g.canvas == facing.canvas && g.feet == facing.feet && g.neckY == facing.neckY && g.drawOrder == facing.drawOrder)
+            #expect((g.walk != nil) == (facing.walk != nil))
+            for (partName, part) in facing.parts {
+                let p = try #require(g.parts[partName])
+                #expect(p.pivot == part.pivot && p.silhouette == part.silhouette, "\(name).\(partName)")
+                // 只剩一層：外形填滿灰色，裡面的顏色、肚子、描線都不畫
+                #expect(p.layers.count == 1 && p.layers[0].fill == VectorRig.placeholderFill && p.layers[0].shapes == part.silhouette)
+            }
+        }
+        // 畫出來整個身體都是灰色（肚子的位置也是）
+        let body = try #require(VectorRasterizer.rasterize(gray, facing: "front", pixelsPerUnit: 4).first { $0.name == "body" })
+        #expect(Self.pixel(body.fill, body.bounds, 4, 10, 17) == [0xa3, 0xa3, 0xa3, 255])
     }
 
     // MARK: - 角色包

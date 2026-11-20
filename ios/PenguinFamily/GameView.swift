@@ -5,7 +5,7 @@ import SwiftUI
 ///
 /// 「接線員」：一家的每一隻各有自己的身分、狀態機、閒晃與位置；誰在台上由 `onStage` 決定（舞台用加入、移除，不用數量）。
 /// 主人點了哪一隻，就交給那一隻的狀態機，並把這件事丟給事件紀錄在背景寫入（不等它存完）。
-/// 台上的企鵝一回到待機，就問牠的閒晃接下來做什麼（走去某一格、站著幾秒）。
+/// 台上的企鵝一回到待機，就問牠的閒晃接下來做什麼（走去某一格、站著幾秒），並告訴閒晃別隻在哪。
 struct GameView: View {
     /// 箱庭外面的顏色；載入畫面也用同一個，切換時不閃。
     static let outsideColor = Color(red: 0.23, green: 0.21, blue: 0.19)
@@ -24,6 +24,14 @@ struct GameView: View {
         /// 沒人碰時接下來做什麼；閒晃的資料讀不到時是 nil，牠就只站著。
         var wander: WanderRoutine?
         var position: TilePosition
+
+        /// 牠在哪一格：正在走（或走路被點打斷）的話是要去的那一格，否則是站的那一格。
+        var whereabouts: Tile {
+            for intent in [behavior.intent, behavior.interruptedWalk] {
+                if case .walk(let goal, _)? = intent { return goal }
+            }
+            return Tile(containing: position)
+        }
     }
 
     /// 事件紀錄；預覽時可以是 nil。
@@ -32,21 +40,21 @@ struct GameView: View {
     /// 台上有誰，依上台先後。
     @State private var onStage: [PenguinID]
 
+    /// `wander` 是 App 裡的預設閒晃；角色包帶了自己的 `wander.json` 的那隻用自己的（作者 2026-11-19 決定兩隻各自獨立）。
     init(family: [LoadedCharacter?], wander: WanderConfig?, events: EventLog?) {
         self.events = events
         let members = family.enumerated().map { index, character in
             Member(id: PenguinID(character: character, index: index), character: character,
-                   wander: wander.map { WanderRoutine(config: $0, room: Self.room) },
+                   wander: (character?.wander ?? wander).map { WanderRoutine(config: $0, room: Self.room) },
                    position: Self.startPositions[index % Self.startPositions.count])
         }
         _members = State(initialValue: members)
         _onStage = State(initialValue: Self.initialStage(members.map(\.id)))
     }
 
-    /// 一開始誰在台上。作者 2026-11-17 決定：寫移動（A1 第 5～11 項）的期間只有第一隻，
-    /// 第二隻先留在後台；第一隻走穩後（第 12 項）第二隻再上台。
+    /// 一開始誰在台上：一家每一隻（A1 第 12 項）。沒有角色包的那隻，台上是借另一隻形狀塗灰的替身。
     static func initialStage(_ family: [PenguinID]) -> [PenguinID] {
-        Array(family.prefix(1))
+        family
     }
 
     var body: some View {
@@ -55,7 +63,7 @@ struct GameView: View {
                 .ignoresSafeArea()
             RoomView(
                 room: Self.room,
-                cast: members.map { .init(id: $0.id, vector: $0.character?.vector) },
+                cast: members.map { .init(id: $0.id, vector: $0.character?.vector, motions: $0.character?.motions ?? .standard) },
                 penguins: onStage.compactMap { id in
                     members.first { $0.id == id }.map {
                         .init(id: id, position: $0.position, intent: $0.behavior.intent, serial: $0.behavior.serial)
@@ -95,10 +103,12 @@ struct GameView: View {
     /// 台上的這一隻在待機的話，問牠的閒晃下一步做什麼，交給狀態機。
     private func wander(_ id: PenguinID) {
         guard onStage.contains(id) else { return }
+        let others = Set(members.filter { $0.id != id && onStage.contains($0.id) }.map(\.whereabouts))
         update(id) { member in
             guard member.behavior.intent == .idle, var routine = member.wander else { return }
             var rng = SystemRandomNumberGenerator()
-            let step = routine.next(from: Tile(containing: member.position), now: CACurrentMediaTime(), using: &rng)
+            let step = routine.next(from: Tile(containing: member.position), others: others,
+                                    now: CACurrentMediaTime(), using: &rng)
             member.wander = routine
             if let step { member.behavior.handle(step.request) }
         }

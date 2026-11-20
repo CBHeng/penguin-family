@@ -9,9 +9,12 @@
 /// - 待機 →（要牠站著幾秒）→ 站著 →（站滿）→ 待機；站著時被點就哈囉。
 /// - 走路中被點：當場停下哈囉，播完接著走原本那段路（作者 2026-11-19 決定）。
 /// 要牠走去哪、站多久由閒晃（`WanderRoutine`）決定。哈囉中再點不理（點一下的反應依權重是 A1 第 14 項）。
+///
+/// 狀態兩隻共用（作者 2026-11-19 決定）：每個狀態怎麼動是每隻自己的數字（`PenguinMotions`），
+/// 什麼時候做什麼是每隻自己的閒晃資料（`WanderConfig`），都放在各自的角色包，這裡不分是哪一隻。
 nonisolated struct PenguinBehavior: Equatable, Sendable {
     /// 走路的快慢：平常慢走，偶爾小跑（遊戲設計的「走路的樣子」）。
-    enum Pace: String, Equatable, Sendable {
+    enum Pace: String, CaseIterable, Equatable, Sendable {
         case walk
         case trot
     }
