@@ -1,11 +1,13 @@
 import MetalKit
 import os
 
-/// 用 Metal 照 `RoomStage` 的清單把每一樣東西畫出來（ADR 0006、0007）。
+/// 用 Metal 照繪製清單（`DrawList`）把每一樣東西畫出來（ADR 0006、0007、0008）。
 ///
+/// 只畫：不算姿勢、不排序、不讀模擬。姿勢、前後順序、鏡頭都由畫面準備（`FrameBuilder`）算好放在清單裡。
 /// - 箱庭（牆、地板、家具）是多邊形：載入時切成三角形放進一個緩衝區，之後每一格只指定畫哪一段。
-/// - 企鵝：載入時把每個畫好的方向的每個部件畫成兩張貼圖（外框、顏色，見 `VectorRasterizer`），每一格依姿勢把貼圖轉到畫面上；
-///   先畫整隻的外框，再畫顏色。貼圖照抱抱近景的倍率準備（螢幕倍率最多算到 2），縮小時用 mipmap。右前、右後翻轉左邊的貼圖，不另外準備。
+/// - 企鵝：載入時把每個畫好的方向的每個部件畫成兩張貼圖（外框、顏色，見 `VectorRasterizer`），每一格照清單裡每個部件的矩陣
+///   把貼圖的四個角放到畫面上；先畫整隻的外框，再畫顏色。貼圖照抱抱近景的倍率準備（螢幕倍率最多算到 2），縮小時用 mipmap。
+///   右前、右後翻轉左邊的貼圖，不另外準備（矩陣裡已經翻好）。
 /// - 邊緣用 4 倍多重取樣抗鋸齒；多重取樣的畫布只在 GPU 晶片上（memoryless），不佔記憶體。
 /// - 顏色不經過轉換：貼圖與頂點顏色都是 sRGB 的數值，畫面標成 sRGB。
 final class SpriteRenderer: NSObject, MTKViewDelegate {
@@ -52,7 +54,8 @@ final class SpriteRenderer: NSObject, MTKViewDelegate {
 
     private static let log = Logger(subsystem: "PenguinFamily", category: "Render")
 
-    private let stage: RoomStage
+    /// 這一格要畫的東西；遊戲迴圈換新的清單後呼叫 `MTKView.draw()`。
+    var drawList: DrawList?
     private let device: MTLDevice
     private let pixelFormat: MTLPixelFormat
     private let commandQueue: MTLCommandQueue
@@ -61,16 +64,19 @@ final class SpriteRenderer: NSObject, MTKViewDelegate {
     private let smooth: MTLSamplerState
     private let polygonBuffer: MTLBuffer?
     /// 每一組多邊形在緩衝區裡是第幾個頂點到第幾個。
-    private let polygonRanges: [RoomStage.SpriteKey: Range<Int>]
-    private let vectorRigs: [PenguinID: VectorRig]
+    private let polygonRanges: [DrawKey: Range<Int>]
     /// 每一隻、每個畫好的方向、每個部件的貼圖。
     private let vectorParts: [PenguinID: [String: [String: VectorPart]]]
     private var multisample: MTLTexture?
     /// 貼圖佔多少記憶體（位元組，含 mipmap）。
     let textureBytes: Int
 
-    /// - Parameter displayScale: 1pt 幾個實體像素，決定向量部件的貼圖解析度。
-    init?(device: MTLDevice, pixelFormat: MTLPixelFormat, stage: RoomStage, displayScale: Double) {
+    /// - Parameters:
+    ///   - polygons: 箱庭的多邊形（背景與每件家具）。
+    ///   - rigs: 後台名單每一隻的造型，包含還沒上台的。
+    ///   - displayScale: 1pt 幾個實體像素，決定向量部件的貼圖解析度。
+    init?(device: MTLDevice, pixelFormat: MTLPixelFormat, polygons: [DrawKey: [ColoredPolygon]],
+          rigs: [PenguinID: VectorRig], displayScale: Double) {
         guard let queue = device.makeCommandQueue(),
               let library = device.makeDefaultLibrary(),
               let quadPipeline = Self.pipeline(device, library, pixelFormat, "quadVertex", "quadFragment"),
@@ -81,8 +87,8 @@ final class SpriteRenderer: NSObject, MTKViewDelegate {
 
         // 箱庭：每塊凸多邊形用扇形切成三角形
         var vertices: [PolygonVertex] = []
-        var ranges: [RoomStage.SpriteKey: Range<Int>] = [:]
-        for (key, polygons) in stage.polygons() {
+        var ranges: [DrawKey: Range<Int>] = [:]
+        for (key, polygons) in polygons {
             let start = vertices.count
             for polygon in polygons where polygon.points.count >= 3 {
                 let c = polygon.color
@@ -99,7 +105,6 @@ final class SpriteRenderer: NSObject, MTKViewDelegate {
             bytes: vertices, length: vertices.count * MemoryLayout<PolygonVertex>.stride, options: .storageModeShared)
 
         // 企鵝：部件畫成貼圖，產生 mipmap
-        let rigs = stage.rigs()
         var parts: [PenguinID: [String: [String: VectorPart]]] = [:]
         let pixelsPerUnit = Self.vectorPixelsPerUnit(displayScale: displayScale)
         let rasterize = PerfSignposts.signposter.beginInterval("rasterize")
@@ -125,7 +130,6 @@ final class SpriteRenderer: NSObject, MTKViewDelegate {
         PerfSignposts.signposter.endInterval("rasterize", rasterize)
         Self.log.info("textures \(bytes / 1024) KB, polygon vertices \(vertices.count)")
 
-        self.stage = stage
         self.device = device
         self.pixelFormat = pixelFormat
         self.commandQueue = queue
@@ -134,7 +138,6 @@ final class SpriteRenderer: NSObject, MTKViewDelegate {
         self.smooth = smooth
         self.polygonBuffer = polygonBuffer
         self.polygonRanges = ranges
-        self.vectorRigs = rigs
         self.vectorParts = parts
         self.textureBytes = bytes
         super.init()
@@ -199,7 +202,7 @@ final class SpriteRenderer: NSObject, MTKViewDelegate {
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
 
     func draw(in view: MTKView) {
-        guard let transform = stage.viewTransform, stage.viewport.width > 0 else { return }
+        guard let list = drawList, list.viewportWidth > 0 else { return }
         let size = view.drawableSize
         // 要畫布：沒有空的畫布時會在這裡等（量這一步，追偶發的變慢）
         let drawable = PerfSignposts.measure("acquireDrawable") { view.currentDrawable }
@@ -214,41 +217,36 @@ final class SpriteRenderer: NSObject, MTKViewDelegate {
         attachment.storeAction = .multisampleResolve
         guard let encoder = buffer.makeRenderCommandEncoder(descriptor: pass) else { return }
 
-        // 一個單位等於幾個螢幕實體像素
-        let devicePerUnit = transform.pointsPerUnit * size.width / stage.viewport.width
+        // 清單用畫面上的 pt；1pt 等於幾個螢幕實體像素
+        let pixelsPerPoint = size.width / list.viewportWidth
         let viewport = SIMD2<Float>(Float(size.width), Float(size.height))
-        func onScreen(_ x: Double, _ y: Double) -> SIMD2<Float> {
-            SIMD2(Float((x - transform.topLeftX) * devicePerUnit), Float((y - transform.topLeftY) * devicePerUnit))
-        }
-        var polygonUniforms = PolygonUniforms(topLeft: SIMD2(Float(transform.topLeftX), Float(transform.topLeftY)),
-                                              viewport: viewport, devicePerUnit: Float(devicePerUnit))
+        var polygonUniforms = PolygonUniforms(topLeft: SIMD2(Float(list.topLeftX), Float(list.topLeftY)), viewport: viewport,
+                                              devicePerUnit: Float(list.pointsPerUnit * pixelsPerPoint))
 
         let encode = PerfSignposts.signposter.beginInterval("encode")
         defer { PerfSignposts.signposter.endInterval("encode", encode) }
-        for sprite in stage.sprites() {
-            switch sprite.key {
-            case .background, .furniture:
-                guard let polygonBuffer, let range = polygonRanges[sprite.key], !range.isEmpty else { continue }
+        for item in list.items {
+            switch item {
+            case .polygons(let key):
+                guard let polygonBuffer, let range = polygonRanges[key], !range.isEmpty else { continue }
                 encoder.setRenderPipelineState(polygonPipeline)
                 encoder.setVertexBuffer(polygonBuffer, offset: 0, index: 0)
                 encoder.setVertexBytes(&polygonUniforms, length: MemoryLayout<PolygonUniforms>.stride, index: 1)
                 encoder.drawPrimitives(type: .triangle, vertexStart: range.lowerBound, vertexCount: range.count)
-            case .penguin(let id):
-                guard let pose = sprite.pose, let frame = vectorRigs[id]?.frame(pose),
-                      let parts = vectorParts[id]?[frame.look.source] else { continue }
+            case .penguin(let id, let look, let parts):
+                guard let textures = vectorParts[id]?[look] else { continue }
                 encoder.setRenderPipelineState(quadPipeline)
                 encoder.setFragmentSamplerState(smooth, index: 0)
-                // 先畫整隻的外框，再畫顏色：部件重疊處才不會多出內線。翻轉的方向用來源的貼圖，矩陣裡已經翻好
+                // 先畫整隻的外框，再畫顏色：部件重疊處才不會多出內線
                 for outline in [true, false] {
-                    for name in frame.look.drawOrder {
-                        guard let part = parts[name] else { continue }
-                        let t = frame.transforms[name] ?? .identity
-                        let b = part.bounds
+                    for part in parts {
+                        guard let texture = textures[part.name] else { continue }
+                        let b = texture.bounds
                         let corners = [(b.minX, b.minY), (b.maxX, b.minY), (b.minX, b.maxY), (b.maxX, b.maxY)].map { corner in
-                            let p = t.apply(corner.0, corner.1)
-                            return onScreen(sprite.x + p.x, sprite.y + p.y)
+                            let p = part.transform.apply(corner.0, corner.1)
+                            return SIMD2<Float>(Float(p.x * pixelsPerPoint), Float(p.y * pixelsPerPoint))
                         }
-                        drawQuad(encoder, corners, viewport, outline ? part.outline : part.fill)
+                        drawQuad(encoder, corners, viewport, outline ? texture.outline : texture.fill)
                     }
                 }
             }

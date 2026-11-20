@@ -69,3 +69,15 @@ xcrun xctrace record --template 'Time Profiler' --instrument 'Hangs' --instrumen
 ```
 
   匯出 `os-signpost` 表就能看到每一步的時間；Time Profiler 的函式取樣匯出後只有記憶體位址，要另外符號化，通常看量測點就夠了。
+  主執行緒的量測點是 `frame`、`prepare`、`draw`、`tap`；模擬在自己的執行緒，量測點是 `simulate`（ADR 0008）。
+
+## 驗收狀態與繪圖的分工（ADR 0008）
+
+ADR 0008 的定案條件：手感不比 v0.0.7 差，而且狀態機變慢時畫面照樣順。
+
+1. 用 Release 裝到手機（`-configuration Release`，或 Xcode 的 scheme 用 Release 執行）。點企鵝、看牠走路，和 v0.0.7 比手感。有東西在動時，點下去到開始畫哈囉多 0～33 毫秒（平均約 17），全部站著時約 0（見 ADR 0008）。
+2. 讓模擬故意變慢：在 Xcode 的 Product → Scheme → Edit Scheme… → Run → Arguments 的「Arguments Passed On Launch」加一行 `-SimulationExtraTickMilliseconds 50`（選單名稱以畫面為準），再執行一次。每個節拍多花 50 毫秒，模擬跟不上真實時間，企鵝會走得慢一點；拖曳、捏合鏡頭時畫面應該照樣順。看完把這一行刪掉或取消勾選。
+   - 原理：啟動參數 `-名稱 值` 會成為 App 的 `UserDefaults`，`SimulationRunner` 啟動時讀它，預設是 0。2026-11-20 在模擬器用 `xcrun simctl launch <裝置> com.cbheng.PenguinFamily -SimulationExtraTickMilliseconds 50` 啟動過，App 正常執行；實機的效果還沒看過。
+3. 想看數字時，照上一節加上 Points of Interest 錄一次：`simulate` 變長時，主執行緒的 `frame` 不應該跟著變長。
+
+2026-11-20 作者在 iPhone 11 上照 1、2 驗收：手感感覺不出差別，模擬變慢時畫面一樣順，ADR 0008 定案。數字沒有錄。

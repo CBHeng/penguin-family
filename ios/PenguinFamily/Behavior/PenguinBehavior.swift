@@ -1,7 +1,7 @@
 /// 一隻企鵝的行為狀態機：決定牠現在要做什麼，只輸出意圖，不碰畫面。
 ///
-/// `World` 依 `intent` 播放動作、站著或走路，播完、站滿回報 `.motionFinished`，走到回報 `.arrived`；
-/// 動作要播多久、怎麼走過去由 `World` 決定，這裡不處理時間，所以可以單獨測試，換畫面技術也能沿用。
+/// 每隻的狀態機由模擬（`Simulation`）持有：模擬依 `intent` 播放動作、站著或走路，播完、站滿交給 `.motionFinished`，
+/// 走到交給 `.arrived`；動作要播多久、怎麼走過去由模擬決定，這裡不處理時間，所以可以單獨測試，換畫面技術也能沿用。
 ///
 /// 目前的流程：
 /// - 待機 →（主人點一下）→ 哈囉 →（播完）→ 待機。
@@ -19,11 +19,11 @@ nonisolated struct PenguinBehavior: Equatable, Sendable {
         case trot
     }
 
-    /// 企鵝現在要呈現的事，`World` 照著播放。
+    /// 企鵝現在要做的事，模擬照著做。
     enum Intent: Equatable, Sendable {
         case idle
         case hello
-        /// 走到某一格（沿格線、繞過家具，路由 `World` 找）。
+        /// 走到某一格（沿格線、繞過家具，路由模擬找）。
         case walk(to: Tile, pace: Pace)
         /// 站在原地幾秒：發呆、東張西望的一眼、在窗邊看外面、走幾步停一下。
         /// `facing` 是要轉向哪裡，nil 維持原本的方向。
@@ -34,24 +34,22 @@ nonisolated struct PenguinBehavior: Equatable, Sendable {
     enum Input: Equatable, Sendable {
         /// 主人點了企鵝一下。
         case ownerTapped
-        /// `World` 播完目前的動作，或站滿了。
+        /// 模擬回報播完目前的動作，或站滿了。
         case motionFinished
         /// 要牠走去某一格（由閒晃決定）。
         case walkRequested(to: Tile, pace: Pace)
         /// 要牠站在原地幾秒（由閒晃決定）。
         case standRequested(facing: Facing?, seconds: Double)
-        /// `World` 回報走到了（到不了時停在原地，也算走完）。
+        /// 模擬回報走到了（到不了時停在原地，也算走完）。
         case arrived
     }
 
     private(set) var intent: Intent = .idle
     /// 被點打斷的那段路，哈囉播完後接著走；沒有被打斷時是 nil。
     private(set) var interruptedWalk: Intent?
-    /// 意圖每換一次就加一。同樣的意圖連續要兩次（例如往同一個方向站兩次一樣久，中間經過待機）時，
-    /// 畫面只看意圖會以為沒變；看這個編號才知道要重新開始。
-    private(set) var serial = 0
 
     /// 處理一個輸入；意圖有改變時回傳 true，被忽略時回傳 false。
+    /// 同樣的意圖連續要兩次（例如往同一個方向站兩次一樣久，中間經過待機）也是兩次改變，模擬兩次都重新開始。
     @discardableResult
     mutating func handle(_ input: Input) -> Bool {
         guard let next = transition(input) else { return false }
@@ -62,7 +60,6 @@ nonisolated struct PenguinBehavior: Equatable, Sendable {
             interruptedWalk = nil
         }
         intent = next
-        serial += 1
         return true
     }
 

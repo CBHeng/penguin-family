@@ -10,7 +10,7 @@ import Testing
 /// 或貼圖準備得更細。失敗時不要直接調高預算，先和作者討論怎麼省（見架構的記憶體表）。
 ///
 /// 作者 2026-11-19 決定：貼圖最多照螢幕 2 倍準備，所以 3 倍螢幕和 2 倍一樣大；
-/// 角色包不夠時，缺的那隻是借別隻形狀塗灰的替身，貼圖另外畫一份，也算進來（和舞台的後台名單相同）。
+/// 角色包不夠時，缺的那隻是借別隻形狀塗灰的替身，貼圖另外畫一份，也算進來（和畫面準備的後台名單相同）。
 ///
 /// 角色包由私有素材 repo 匯出，不進 git；乾淨 clone 下來沒有角色包，這個測試會跳過。
 /// 訊息只用第幾隻，不寫角色 id（角色名稱只能出現在私有 repo）。
@@ -28,15 +28,15 @@ struct VectorMemoryBudgetTests {
     func familyFitsTheBudgetOnTheSharpestScreen() throws {
         let pixelsPerUnit = SpriteRenderer.vectorPixelsPerUnit(displayScale: Self.displayScale)
         let packs = try Self.family.map { try VectorRig.decode(Data(contentsOf: $0.appending(path: "vector.json"))) }
-        // 一家每一隻實際用的造型，和舞台一樣決定（缺的位置是替身）
+        // 一家每一隻實際用的造型，和畫面準備一樣決定（缺的位置是替身）
         let ids = (0..<CharacterPackLibrary.familySize).map { PenguinID("member-\($0 + 1)") }
-        let stage = RoomStage(room: .indoor, cast: ids.enumerated().map { i, id in
-            RoomStage.CastMember(id: id, vector: i < packs.count ? packs[i] : nil)
+        let builder = FrameBuilder(room: .indoor, cast: ids.enumerated().map { i, id in
+            FrameBuilder.CastMember(id: id, vector: i < packs.count ? packs[i] : nil)
         })
         var total = 0
         var each: [String] = []
         for (i, id) in ids.enumerated() {
-            let rig = try #require(stage.rigs()[id])
+            let rig = try #require(builder.rigs()[id])
             let bytes = VectorRasterizer.textureBytes(rig, pixelsPerUnit: pixelsPerUnit)
             total += bytes
             each.append("第 \(i + 1) 隻\(i < packs.count ? "" : "（替身）") \(bytes / 1024) KB（\(rig.facings.count) 個畫好的方向）")
