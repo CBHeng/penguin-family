@@ -3,18 +3,24 @@
 /// 依 `WanderConfig` 的權重挑一種活動，冷卻中的先不挑，再拆成一步步交給狀態機：走去某一格、站著幾秒。不分物種。
 /// 一種活動的步驟用完才挑下一種；被主人打斷（哈囉）後接著做剩下的步驟。
 /// 別隻角色在哪由外面給：不挑牠們的格子當目的地或半路停的地方，「走去黏著另一隻」走到牠們旁邊（A1 第 12 項）。
+/// 打瞌睡（作者 2026-11-20 決定）：挑新的活動前，睏意（外面給）超過 `sleepiness.doze.above` 時有一定的機率改成打瞌睡
+/// （越睏機率越高，見 `WanderConfig.SleepinessConfig.Doze.chance(at:)`）；
+/// 醒來後 `cooldown` 秒內不再打瞌睡。
 /// 不碰畫面；時間（秒）與亂數由外面給，所以可以用固定的亂數測。
 nonisolated struct WanderRoutine: Sendable {
     /// 交給狀態機的一步。
     enum Step: Equatable, Sendable {
         case move(to: Tile, pace: CharacterBehavior.Pace)
         case stand(facing: Facing?, seconds: Double)
+        /// 原地坐下打瞌睡，什麼時候醒由模擬照睏意決定。
+        case doze
 
         /// 這一步要給狀態機的輸入。
         var request: CharacterBehavior.Input {
             switch self {
             case .move(let tile, let pace): .moveRequested(to: tile, pace: pace)
             case .stand(let facing, let seconds): .standRequested(facing: facing, seconds: seconds)
+            case .doze: .dozeRequested
             }
         }
     }
@@ -28,8 +34,10 @@ nonisolated struct WanderRoutine: Sendable {
     private(set) var plan: [Step] = []
     /// 每種活動上次開始的時間（秒），算冷卻用。
     private var lastStarted: [String: Double] = [:]
-    /// 正在做（或剛做完）的活動 id；還沒開始是 nil。
+    /// 正在做（或剛做完）的活動 id；還沒開始是 nil。打瞌睡是 `doze`。
     private(set) var activity: String?
+    /// 上次打瞌睡醒來的時間（秒），算打瞌睡的冷卻用。
+    private var lastDozeEnded = -Double.infinity
 
     init(config: WanderConfig, room: RoomLayout) {
         self.config = config
@@ -37,12 +45,29 @@ nonisolated struct WanderRoutine: Sendable {
     }
 
     /// 下一步。這次活動的步驟用完時挑新的活動；`here` 是角色現在站的格子，`now` 是現在的時間（秒）。
-    /// `others` 是台上別隻的格子（正在走的話是牠要去的那一格）。
+    /// `others` 是台上別隻的格子（正在走的話是牠要去的那一格）。`sleepiness` 是現在的睏意；
+    /// nil 時不會打瞌睡（例如這隻沒有打瞌睡的動作）。
     /// 什麼都做不了時是 nil（例如資料裡的活動在這個房間都走不到）。
-    mutating func next(from here: Tile, others: Set<Tile> = [], now: Double,
+    mutating func next(from here: Tile, others: Set<Tile> = [], now: Double, sleepiness: Double? = nil,
                        using rng: inout some RandomNumberGenerator) -> Step? {
+        if plan.isEmpty, wantsToDoze(sleepiness, now: now, using: &rng) {
+            activity = "doze"
+            return .doze
+        }
         if plan.isEmpty { plan = start(from: here, others: others, now: now, using: &rng) }
         return plan.isEmpty ? nil : plan.removeFirst()
+    }
+
+    /// 打瞌睡醒來了（自己醒或被點醒）：從現在起算冷卻。
+    mutating func dozeEnded(at now: Double) {
+        lastDozeEnded = now
+    }
+
+    /// 睏意夠高、冷卻好了，再擲一次機率。
+    private func wantsToDoze(_ sleepiness: Double?, now: Double, using rng: inout some RandomNumberGenerator) -> Bool {
+        guard let sleepiness, let doze = config.sleepiness?.doze, sleepiness >= doze.above,
+              now - lastDozeEnded >= doze.cooldown else { return false }
+        return Double.random(in: 0..<1, using: &rng) < doze.chance(at: sleepiness)
     }
 
     // MARK: - 挑活動

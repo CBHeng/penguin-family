@@ -142,6 +142,8 @@ struct FrameBuilderTests {
                 case .character(let id, let look, let parts):
                     let facing = try #require(builder.rigs()[id]?.facings[look], "\(id.rawValue) 沒有 \(look) 的圖")
                     #expect(parts.allSatisfy { facing.parts[$0.name] != nil })
+                case .effect(let name, _, _):
+                    #expect(builder.effectLibrary().effects[name] != nil, "沒有特效 \(name) 的形狀")
                 }
             }
         }
@@ -444,5 +446,59 @@ struct FrameBuilderTests {
         #expect(FrameBuilder.relation(of: Tile(i: 6, j: 7).center, to: sofa) == .behind)
         #expect(FrameBuilder.relation(of: Tile(i: 7, j: 5).center, to: sofa) == .behind)
         #expect(FrameBuilder.relation(of: Tile(i: 8, j: 5).center, to: sofa) == .unknown)   // 斜對角
+    }
+
+    // MARK: - 換部件與特效（ADR 0010）
+
+    /// 有閉眼部件的假角色與第 3 版的動作，加上一個特效 z（只用轉軸）。
+    static func dozingBuilder() throws -> FrameBuilder {
+        let rig = try VectorRigTests.rig(VectorRigTests.dozingJSON)
+        let motions = try MotionClipTests.motions(MotionClipTests.v3JSON)
+        let z = VectorRig.Part(pivot: .init(x: 0, y: 0), silhouette: [],
+                               layers: [.init(fill: "#525e70", stroke: nil, width: nil, shapes: [.ellipse(cx: 0, cy: 0, rx: 1, ry: 1)], clip: nil)])
+        let builder = FrameBuilder(room: .indoor, cast: [.init(id: ids[0], vector: rig, motions: motions)],
+                                   effects: EffectLibrary(effects: ["z": z]))
+        builder.resize(viewport: CGSize(width: 402, height: 874), displayScale: 3)
+        return builder
+    }
+
+    @Test func hiddenPartsAndEffectsFollowTheClip() throws {
+        let builder = try Self.dozingBuilder()
+        func items(_ activity: Activity, at time: Double) throws -> [DrawList.Item] {
+            try #require(Self.build(builder, Self.snapshot([Self.character(Self.ids[0], Self.positions[0], .front, activity)]),
+                                    at: time).drawList).items
+        }
+        /// 角色後面緊接著的特效（在家具前後都一樣）。
+        func effects(_ items: [DrawList.Item]) -> [(name: String, m: Affine2D, alpha: Double)] {
+            guard let at = items.firstIndex(where: { if case .character = $0 { true } else { false } }) else { return [] }
+            return items[(at + 1)...].prefix { if case .effect = $0 { true } else { false } }.compactMap {
+                guard case .effect(let name, let m, let alpha) = $0 else { return nil }
+                return (name, m, alpha)
+            }
+        }
+        func parts(_ items: [DrawList.Item]) -> [String] {
+            items.flatMap { item -> [String] in
+                guard case .character(_, _, let parts) = item else { return [] }
+                return parts.map(\.name)
+            }
+        }
+        // 站著：閉眼藏起來，沒有特效
+        let still = try items(.still, at: 0)
+        #expect(parts(still) == ["body", "arm", "head"])
+        #expect(!still.contains { if case .effect = $0 { true } else { false } })
+        // 打瞌睡第 1 秒：閉眼顯示，Z 緊接在角色後面、不透明
+        let dozing = try items(.motion(.doze, since: 0), at: 1)
+        #expect(parts(dozing) == ["body", "arm", "head", "eyesClosed"])
+        let z = effects(dozing)
+        #expect(z.map(\.name) == ["z"] && z.first?.alpha == 1)
+        #expect(dozing.filter { if case .effect = $0 { true } else { false } }.count == 1)
+        // 循環：第 0 秒的 Z 看不到；第 2.5 秒和第 0.5 秒一樣（半透明）
+        #expect(effects(try items(.motion(.doze, since: 0), at: 0)).isEmpty)
+        let later = effects(try items(.motion(.doze, since: 0), at: 2.5))
+        let earlier = effects(try items(.motion(.doze, since: 0), at: 0.5))
+        #expect(later.count == 1 && earlier.count == 1)
+        if let a = later.first, let b = earlier.first {
+            #expect(abs(a.alpha - 0.5) < 1e-12 && a.alpha == b.alpha && a.m == b.m)
+        }
     }
 }

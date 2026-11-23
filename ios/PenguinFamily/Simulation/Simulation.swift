@@ -16,6 +16,10 @@ import Foundation
 /// 等了一陣子還擋著就找一條繞開牠的路（第一隻等久一點，迎面撞上時第二隻先讓），繞不過去、等太久就停在原地算走到。
 ///
 /// 移動中被點（作者 2026-11-19 決定）：停在當下的位置（可能在兩格之間）哈囉，揮完從停的地方沿格線接著走，不跳回格子中心。
+///
+/// 睏意（作者 2026-11-20 決定）：每隻的睏意在這裡（`Sleepiness`，數字在牠的 `wander.json`）。醒著時照在做什麼增加，
+/// 打瞌睡時下降；閒晃挑下一件事時照睏意決定要不要打瞌睡。打瞌睡時算好睏意什麼時候降到 `wakeBelow`，
+/// 再等打瞌睡的動作播到一個循環結束（頭剛抬起來）才叫牠自己醒來，畫面才不會跳。
 nonisolated struct Simulation: Sendable {
     /// 每秒幾個節拍（作者 2026-11-20 決定，ADR 0008）。
     static let ticksPerSecond = 30
@@ -45,6 +49,8 @@ nonisolated struct Simulation: Sendable {
         case ownerTapped(CharacterID, at: Date)
         /// 直接交給這一隻的狀態機，例如要牠走去某一格。
         case input(CharacterID, CharacterBehavior.Input)
+        /// 台上每一隻的睏意一下子加這麼多（除錯用的「加睏意」按鈕，作者 2026-11-20 要求）。
+        case addSleepiness(Double)
     }
 
     /// 這個節拍發生的事，交給外面（事件紀錄、之後的觸覺與台詞）。
@@ -81,6 +87,10 @@ nonisolated struct Simulation: Sendable {
         var walking: Walk?
         /// 移動被打斷時停在兩格之間；在格子中心時是 nil。
         var midway: Midway?
+        /// 睏意；閒晃的資料沒有 `sleepiness` 時是 nil（不會打瞌睡）。
+        var sleepiness: Sleepiness?
+        /// 打瞌睡時，什麼時候自己醒來（模擬的秒）；沒在打瞌睡是 nil。
+        var dozeUntil: Double?
     }
 
     /// 正在走的一段路。
@@ -132,12 +142,17 @@ nonisolated struct Simulation: Sendable {
     /// 有角色正在播動作或移動。站著不算：畫面不動，只要到時間（`wakeAt`）再跑。
     var isMoving: Bool { characters.contains { $0.playing != nil || $0.walking != nil } }
 
-    /// 沒有東西在動時，下次要醒來的模擬時間（最早站滿的那隻）；沒有排定的事是 nil。
-    var wakeAt: Double? { characters.compactMap(\.standUntil).min() }
+    /// 沒有東西在動時，下次要醒來的模擬時間（最早站滿、或打瞌睡該醒的那隻）；沒有排定的事是 nil。
+    var wakeAt: Double? { characters.flatMap { [$0.standUntil, $0.dozeUntil].compactMap { $0 } }.min() }
 
     /// 台上某一隻的狀態機；不在台上是 nil。
     func behavior(of id: CharacterID) -> CharacterBehavior? {
         characters.first { $0.id == id }?.behavior
+    }
+
+    /// 台上某一隻現在的睏意（0～100）；不在台上或沒有睏意的資料時是 nil。
+    func sleepiness(of id: CharacterID) -> Double? {
+        characters.first { $0.id == id }?.sleepiness?.level(at: time)
     }
 
     /// 這個節拍結束時的樣子。
@@ -182,6 +197,9 @@ nonisolated struct Simulation: Sendable {
                 characters[index].standUntil = nil
                 finished.append(characters[index].id)
             }
+            if let until = characters[index].dozeUntil, now >= until {
+                input(characters[index].id, .dozeEnded, now: now)
+            }
             if let tile = advanceWalk(index, now: now) { arrived.append((characters[index].id, tile)) }
         }
 
@@ -212,9 +230,15 @@ nonisolated struct Simulation: Sendable {
         switch event {
         case .enter(let id, let position):
             guard index(of: id) == nil, let member = cast.first(where: { $0.id == id }) else { return nil }
-            characters.append(Character(id: id, motions: member.motions,
-                                        wander: member.wander.map { WanderRoutine(config: $0, room: room) },
-                                        position: position))
+            var character = Character(id: id, motions: member.motions,
+                                      wander: member.wander.map { WanderRoutine(config: $0, room: room) },
+                                      position: position)
+            if let config = member.wander?.sleepiness {
+                // 打開 App 時從範圍裡隨機開始（不跨次保存）
+                character.sleepiness = Sleepiness(value: Double.random(in: config.start, using: &rng), at: now,
+                                                  perSecond: config.risePerMinute.still / 60)
+            }
+            characters.append(character)
             return id
         case .leave(let id):
             characters.removeAll { $0.id == id }
@@ -227,6 +251,11 @@ nonisolated struct Simulation: Sendable {
             input(id, .ownerTapped, now: now)
         case .input(let id, let request):
             input(id, request, now: now)
+        case .addSleepiness(let amount):
+            for index in characters.indices where characters[index].sleepiness != nil {
+                characters[index].sleepiness?.add(amount, at: now)
+                if characters[index].behavior.intent == .doze { scheduleWake(index, now: now) }
+            }
         }
         return nil
     }
@@ -242,7 +271,11 @@ nonisolated struct Simulation: Sendable {
         guard let index = index(of: id), characters[index].behavior.intent == .idle,
               var routine = characters[index].wander else { return }
         let others = Set(characters.indices.filter { $0 != index }.map { Self.whereabouts(of: characters[$0]) })
-        let next = routine.next(from: Tile(containing: characters[index].position), others: others, now: now, using: &rng)
+        // 沒有打瞌睡的動作（例如灰色剪影）就不打瞌睡
+        let canDoze = characters[index].motions.motion(named: "doze") != nil
+        let sleepiness = canDoze ? characters[index].sleepiness?.level(at: now) : nil
+        let next = routine.next(from: Tile(containing: characters[index].position), others: others, now: now,
+                                sleepiness: sleepiness, using: &rng)
         characters[index].wander = routine
         if let next, characters[index].behavior.handle(next.request) { apply(index, now: now) }
     }
@@ -254,20 +287,23 @@ nonisolated struct Simulation: Sendable {
     /// - 移動被別的意圖打斷（例如被點就哈囉）：停在當下的位置，記下停在哪兩格之間。
     /// - 站著：轉向意圖給的方向（nil 不轉），站滿後回報播完。
     /// - 待機：不換方向，走到後維持走的方向。
+    /// - 循環的動作（例如打瞌睡，ADR 0010）一直播，不會播完。
+    /// - 睏意照新的意圖改變增減的速度；打瞌睡時算好什麼時候自己醒來，醒來（或被點醒）時閒晃開始算打瞌睡的冷卻。
     private mutating func apply(_ index: Int, now: Double) {
         let intent = characters[index].behavior.intent
         if let name = intent.motionName {
             let motion = characters[index].motions.motion(named: name)
-            characters[index].playing = (intent, motion?.duration ?? 0, now)
+            characters[index].playing = (intent, motion.map { $0.loops ? .infinity : $0.duration } ?? 0, now)
             if let turn = motion?.facing { characters[index].facing = turn }
         } else {
             characters[index].playing = nil
         }
+        updateSleepiness(index, now: now)
         if let walk = characters[index].walking { characters[index].midway = Self.midway(of: walk) }
         characters[index].walking = nil
         characters[index].standUntil = nil
         switch intent {
-        case .idle, .hello:
+        case .idle, .hello, .sitDown, .doze, .standUp, .wakeStartled:
             break
         case .stand(let facing, let seconds):
             if let facing { characters[index].facing = facing }
@@ -282,6 +318,41 @@ nonisolated struct Simulation: Sendable {
                                              start: now - walked / speed, distance: walked)
             moveAlong(index, distance: walked)
         }
+    }
+
+    // MARK: - 睏意
+
+    /// 照現在的意圖改睏意增減的速度：打瞌睡時下降，移動時照快慢增加，其他（站著、播動作）照站著增加。
+    /// 打瞌睡時算好什麼時候醒；不在打瞌睡就清掉。剛醒來（自己醒、被點醒）時告訴閒晃開始算冷卻。
+    private mutating func updateSleepiness(_ index: Int, now: Double) {
+        let intent = characters[index].behavior.intent
+        if intent == .standUp || intent == .wakeStartled { characters[index].wander?.dozeEnded(at: now) }
+        guard let config = characters[index].wander?.config.sleepiness, characters[index].sleepiness != nil else {
+            characters[index].dozeUntil = nil
+            return
+        }
+        let rise = config.risePerMinute
+        let perMinute: Double
+        switch intent {
+        case .doze: perMinute = -config.doze.fallPerMinute
+        case .move(_, .slow): perMinute = rise.slow
+        case .move(_, .fast): perMinute = rise.fast
+        default: perMinute = rise.still
+        }
+        characters[index].sleepiness?.change(perSecond: perMinute / 60, at: now)
+        if intent == .doze { scheduleWake(index, now: now) } else { characters[index].dozeUntil = nil }
+    }
+
+    /// 打瞌睡什麼時候自己醒：睏意降到 `wakeBelow` 之後，等打瞌睡的動作播完那一個循環（至少一個循環）。
+    private mutating func scheduleWake(_ index: Int, now: Double) {
+        guard let config = characters[index].wander?.config.sleepiness, let sleepiness = characters[index].sleepiness else { return }
+        let start = characters[index].playing?.start ?? now
+        let ready = now + sleepiness.secondsUntil(fallingTo: config.doze.wakeBelow, from: now)
+        guard let cycle = characters[index].motions.motion(named: "doze")?.cycle else {
+            characters[index].dozeUntil = ready
+            return
+        }
+        characters[index].dozeUntil = start + max(1, ((ready - start) / cycle).rounded(.up)) * cycle
     }
 
     // MARK: - 走路

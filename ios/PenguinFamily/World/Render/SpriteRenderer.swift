@@ -7,7 +7,8 @@ import os
 /// - 箱庭（牆、地板、家具）是多邊形：載入時切成三角形放進一個緩衝區，之後每一格只指定畫哪一段。
 /// - 角色：載入時把每個畫好的方向的每個部件畫成兩張貼圖（外框、顏色，見 `VectorRasterizer`），每一格照清單裡每個部件的矩陣
 ///   把貼圖的四個角放到畫面上；先畫整隻的外框，再畫顏色。貼圖照抱抱近景的倍率準備（螢幕倍率最多算到 2），縮小時用 mipmap。
-///   右前、右後翻轉左邊的貼圖，不另外準備（矩陣裡已經翻好）。
+///   右前、右後翻轉左邊的貼圖，不另外準備（矩陣裡已經翻好）。外形是空的部件（例如眼睛）沒有外框那一張。
+/// - 共用特效（ADR 0010，例如 Z、泡泡）：載入時把每個形狀畫成一張貼圖，照清單的矩陣放、乘上透明度。
 /// - 邊緣用 4 倍多重取樣抗鋸齒；多重取樣的畫布只在 GPU 晶片上（memoryless），不佔記憶體。
 /// - 顏色不經過轉換：貼圖與頂點顏色都是 sRGB 的數值，畫面標成 sRGB。
 final class SpriteRenderer: NSObject, MTKViewDelegate {
@@ -48,7 +49,8 @@ final class SpriteRenderer: NSObject, MTKViewDelegate {
     private struct VectorPart {
         let name: String
         let bounds: CGRect
-        let outline: MTLTexture
+        /// 外形是空的部件沒有（ADR 0010）。
+        let outline: MTLTexture?
         let fill: MTLTexture
     }
 
@@ -67,6 +69,8 @@ final class SpriteRenderer: NSObject, MTKViewDelegate {
     private let polygonRanges: [DrawKey: Range<Int>]
     /// 每一隻、每個畫好的方向、每個部件的貼圖。
     private let vectorParts: [CharacterID: [String: [String: VectorPart]]]
+    /// 共用特效的貼圖，依名稱。
+    private let effectParts: [String: VectorPart]
     private var multisample: MTLTexture?
     /// 貼圖佔多少記憶體（位元組，含 mipmap）。
     let textureBytes: Int
@@ -74,9 +78,10 @@ final class SpriteRenderer: NSObject, MTKViewDelegate {
     /// - Parameters:
     ///   - polygons: 箱庭的多邊形（背景與每件家具）。
     ///   - rigs: 後台名單每一隻的造型，包含還沒上台的。
+    ///   - effects: 共用特效的形狀。
     ///   - displayScale: 1pt 幾個實體像素，決定向量部件的貼圖解析度。
     init?(device: MTLDevice, pixelFormat: MTLPixelFormat, polygons: [DrawKey: [ColoredPolygon]],
-          rigs: [CharacterID: VectorRig], displayScale: Double) {
+          rigs: [CharacterID: VectorRig], effects: EffectLibrary = .empty, displayScale: Double) {
         guard let queue = device.makeCommandQueue(),
               let library = device.makeDefaultLibrary(),
               let quadPipeline = Self.pipeline(device, library, pixelFormat, "quadVertex", "quadFragment"),
@@ -104,24 +109,37 @@ final class SpriteRenderer: NSObject, MTKViewDelegate {
         let polygonBuffer = vertices.isEmpty ? nil : device.makeBuffer(
             bytes: vertices, length: vertices.count * MemoryLayout<PolygonVertex>.stride, options: .storageModeShared)
 
-        // 角色：部件畫成貼圖，產生 mipmap
+        // 角色：部件畫成貼圖，產生 mipmap；共用特效也一樣
         var parts: [CharacterID: [String: [String: VectorPart]]] = [:]
+        var effectParts: [String: VectorPart] = [:]
         let pixelsPerUnit = Self.vectorPixelsPerUnit(displayScale: displayScale)
         let rasterize = PerfSignposts.signposter.beginInterval("rasterize")
-        if !rigs.isEmpty, let mipmaps = queue.makeCommandBuffer(), let blit = mipmaps.makeBlitCommandEncoder() {
+        if !rigs.isEmpty || !effects.effects.isEmpty,
+           let mipmaps = queue.makeCommandBuffer(), let blit = mipmaps.makeBlitCommandEncoder() {
+            func upload(_ images: VectorRasterizer.PartImages) -> VectorPart? {
+                guard let fill = Self.makeTexture(images.fill, device: device, mipmapped: true) else { return nil }
+                var outline: MTLTexture?
+                if let bitmap = images.outline {
+                    guard let texture = Self.makeTexture(bitmap, device: device, mipmapped: true) else { return nil }
+                    blit.generateMipmaps(for: texture)
+                    outline = texture
+                }
+                blit.generateMipmaps(for: fill)
+                bytes += images.byteCount * 4 / 3
+                return VectorPart(name: images.name, bounds: images.bounds, outline: outline, fill: fill)
+            }
             for (id, rig) in rigs {
                 for facing in rig.facings.keys {
                     var list: [String: VectorPart] = [:]
                     for images in VectorRasterizer.rasterize(rig, facing: facing, pixelsPerUnit: pixelsPerUnit) {
-                        guard let outline = Self.makeTexture(images.outline, device: device, mipmapped: true),
-                              let fill = Self.makeTexture(images.fill, device: device, mipmapped: true) else { continue }
-                        blit.generateMipmaps(for: outline)
-                        blit.generateMipmaps(for: fill)
-                        list[images.name] = VectorPart(name: images.name, bounds: images.bounds, outline: outline, fill: fill)
-                        bytes += images.byteCount * 4 / 3
+                        list[images.name] = upload(images)
                     }
                     parts[id, default: [:]][facing] = list
                 }
+            }
+            for (name, effect) in effects.effects {
+                guard let images = VectorRasterizer.rasterizeEffect(effect, name: name, pixelsPerUnit: pixelsPerUnit) else { continue }
+                effectParts[name] = upload(images)
             }
             blit.endEncoding()
             mipmaps.commit()
@@ -139,6 +157,7 @@ final class SpriteRenderer: NSObject, MTKViewDelegate {
         self.polygonBuffer = polygonBuffer
         self.polygonRanges = ranges
         self.vectorParts = parts
+        self.effectParts = effectParts
         self.textureBytes = bytes
         super.init()
     }
@@ -240,15 +259,16 @@ final class SpriteRenderer: NSObject, MTKViewDelegate {
                 // 先畫整隻的外框，再畫顏色：部件重疊處才不會多出內線
                 for outline in [true, false] {
                     for part in parts {
-                        guard let texture = textures[part.name] else { continue }
-                        let b = texture.bounds
-                        let corners = [(b.minX, b.minY), (b.maxX, b.minY), (b.minX, b.maxY), (b.maxX, b.maxY)].map { corner in
-                            let p = part.transform.apply(corner.0, corner.1)
-                            return SIMD2<Float>(Float(p.x * pixelsPerPoint), Float(p.y * pixelsPerPoint))
-                        }
-                        drawQuad(encoder, corners, viewport, outline ? texture.outline : texture.fill)
+                        guard let texture = textures[part.name],
+                              let image = outline ? texture.outline : texture.fill else { continue }
+                        drawQuad(encoder, corners(texture.bounds, part.transform, pixelsPerPoint), viewport, image, alpha: 1)
                     }
                 }
+            case .effect(let name, let transform, let alpha):
+                guard let texture = effectParts[name], alpha > 0 else { continue }
+                encoder.setRenderPipelineState(quadPipeline)
+                encoder.setFragmentSamplerState(smooth, index: 0)
+                drawQuad(encoder, corners(texture.bounds, transform, pixelsPerPoint), viewport, texture.fill, alpha: Float(alpha))
             }
         }
         encoder.endEncoding()
@@ -256,10 +276,21 @@ final class SpriteRenderer: NSObject, MTKViewDelegate {
         buffer.commit()
     }
 
+    /// 貼圖的四個角（左上、右上、左下、右下）照矩陣放到畫面上，單位是螢幕實體像素。
+    private func corners(_ b: CGRect, _ transform: Affine2D, _ pixelsPerPoint: Double) -> [SIMD2<Float>] {
+        [(b.minX, b.minY), (b.maxX, b.minY), (b.minX, b.maxY), (b.maxX, b.maxY)].map { corner in
+            let p = transform.apply(corner.0, corner.1)
+            return SIMD2<Float>(Float(p.x * pixelsPerPoint), Float(p.y * pixelsPerPoint))
+        }
+    }
+
+    /// `alpha` 是整張圖再乘上的透明度（特效淡入淡出用；角色是 1）。
     private func drawQuad(_ encoder: MTLRenderCommandEncoder, _ corners: [SIMD2<Float>], _ viewport: SIMD2<Float>,
-                          _ texture: MTLTexture) {
+                          _ texture: MTLTexture, alpha: Float) {
         var quad = QuadUniforms(c0: corners[0], c1: corners[1], c2: corners[2], c3: corners[3], viewport: viewport)
+        var alpha = alpha
         encoder.setVertexBytes(&quad, length: MemoryLayout<QuadUniforms>.stride, index: 0)
+        encoder.setFragmentBytes(&alpha, length: MemoryLayout<Float>.stride, index: 0)
         encoder.setFragmentTexture(texture, index: 0)
         encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
     }

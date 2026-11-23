@@ -83,10 +83,51 @@ nonisolated struct VectorRig: Decodable, Sendable {
     struct Part: Decodable, Sendable {
         /// 轉軸。
         let pivot: Point
-        /// 外形：描外框用（先用外框色加粗描一次，再畫顏色）。
+        /// 外形：描外框用（先用外框色加粗描一次，再畫顏色）。可以是空的（ADR 0010）：那個部件不描共用的外框，
+        /// 例如畫在頭上的眼睛；畫在別的部件前面、要自己有外框的部件，在顏色層裡加一層外框色的描線。
         let silhouette: [Shape]
         /// 由下往上畫的顏色層。
         let layers: [Layer]
+        /// 平常藏起來（ADR 0010）：片段說要顯示時才畫，例如閉眼、坐著時伸到身體前面的腳。
+        var hidden = false
+
+        private enum CodingKeys: String, CodingKey { case pivot, silhouette, layers, hidden }
+
+        init(pivot: Point, silhouette: [Shape], layers: [Layer], hidden: Bool = false) {
+            self.pivot = pivot
+            self.silhouette = silhouette
+            self.layers = layers
+            self.hidden = hidden
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            self.init(pivot: try c.decode(Point.self, forKey: .pivot),
+                      silhouette: try c.decode([Shape].self, forKey: .silhouette),
+                      layers: try c.decode([Layer].self, forKey: .layers),
+                      hidden: try c.decodeIfPresent(Bool.self, forKey: .hidden) ?? false)
+        }
+
+        /// 這個部件畫得出東西嗎（外形或顏色層至少一個形狀）。
+        var hasShapes: Bool { !silhouette.isEmpty || layers.contains { !$0.shapes.isEmpty } }
+
+        /// 檢查顏色與形狀；`label` 是錯誤訊息裡的位置，例如 `front.head`。
+        func validate(_ label: String) throws {
+            guard hasShapes else { throw VectorRigError.missingPart(label) }
+            for layer in layers {
+                switch (layer.fill, layer.stroke, layer.width) {
+                case let (fill?, nil, _):
+                    guard RGBColor(hex: fill) != nil else { throw VectorRigError.invalidColor(fill) }
+                case let (nil, stroke?, width?) where width > 0:
+                    guard RGBColor(hex: stroke) != nil else { throw VectorRigError.invalidColor(stroke) }
+                default:
+                    throw VectorRigError.invalidDirection(label)
+                }
+                guard !layer.shapes.isEmpty, layer.clip?.contains(where: \.isEmpty) != true else {
+                    throw VectorRigError.missingPart(label)
+                }
+            }
+        }
     }
 
     /// 一層：填滿（`fill`）或描線（`stroke`＋`width`），可以只畫在 `clip` 的範圍內：
@@ -197,19 +238,10 @@ nonisolated struct VectorRig: Decodable, Sendable {
                   Set(facing.drawOrder) == Set(facing.parts.keys)
             else { throw VectorRigError.invalidDirection(name) }
             for (partName, part) in facing.parts {
-                guard !part.silhouette.isEmpty else { throw VectorRigError.missingPart(partName) }
-                for layer in part.layers {
-                    switch (layer.fill, layer.stroke, layer.width) {
-                    case let (fill?, nil, _):
-                        guard RGBColor(hex: fill) != nil else { throw VectorRigError.invalidColor(fill) }
-                    case let (nil, stroke?, width?) where width > 0:
-                        guard RGBColor(hex: stroke) != nil else { throw VectorRigError.invalidColor(stroke) }
-                    default:
-                        throw VectorRigError.invalidDirection("\(name).\(partName)")
-                    }
-                    guard !layer.shapes.isEmpty, layer.clip?.contains(where: \.isEmpty) != true else {
-                        throw VectorRigError.missingPart(partName)
-                    }
+                do {
+                    try part.validate("\(name).\(partName)")
+                } catch VectorRigError.missingPart {
+                    throw VectorRigError.missingPart(partName)
                 }
             }
         }
@@ -278,6 +310,22 @@ extension VectorRig {
             out[name] = flip * (mirror.shift[name].map { base * .translation($0.x, $0.y) } ?? base)
         }
         return (look, out)
+    }
+
+    /// 這一格要畫的部件，依畫的先後（ADR 0010）：片段說顯示或藏起來的照片段，其他照造型（`hidden` 的平常藏起來）。
+    nonisolated func shownParts(_ look: Look, _ pose: CharacterPose) -> [String] {
+        let parts = facings[look.source]?.parts ?? [:]
+        return look.drawOrder.filter { name in pose.shown[name] ?? !(parts[name]?.hidden ?? false) }
+    }
+
+    /// 特效放到角色畫布上的矩陣（ADR 0010）：照特效軌道的樣子以特效的轉軸動。
+    /// 翻轉的方向只翻位置（轉軸落在哪裡），形狀不翻、轉的方向相反，所以 Z 不會變成反的。
+    nonisolated func effectMatrix(_ effect: EffectPose, pivot: Point, look: Look) -> Affine2D {
+        let m = effect.pose.matrix(pivot: pivot)
+        guard look.mirror != nil, let source = facings[look.source] else { return m }
+        let at = m.apply(pivot.x, pivot.y)
+        return .translation(2 * source.feet.x - at.x, at.y) * .rotation(degrees: -effect.pose.rotate)
+            * .scale(effect.pose.scaleX, effect.pose.scaleY) * .translation(-pivot.x, -pivot.y)
     }
 }
 

@@ -1,8 +1,13 @@
 {
-  "version": 2,
+  "version": 3,
   "pace": { "slow": 5, "fast": 1 },
   "breaks": { "everyTiles": [3, 5], "seconds": [0.8, 2] },
   "glanceFacings": ["front", "frontLeft", "frontRight", "backLeft", "backRight"],
+  "sleepiness": {
+    "start": [20, 50],
+    "risePerMinute": { "still": 4, "slow": 6, "fast": 10 },
+    "doze": { "above": 60, "chance": 0.3, "chanceRise": { "every": 5, "add": 0.1 }, "fallPerMinute": 20, "wakeBelow": 45, "cooldown": 60 }
+  },
   "activities": [
     { "id": "window", "kind": "visit", "target": "window", "weight": 3, "cooldown": 60, "seconds": [8, 15] },
     { "id": "sofa", "kind": "visit", "target": "sofa", "weight": 2, "cooldown": 45, "seconds": [4, 8] },

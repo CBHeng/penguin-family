@@ -59,7 +59,8 @@ final class GameLoop: NSObject {
         self.view = view
         if let device = view.device {
             renderer = SpriteRenderer(device: device, pixelFormat: view.colorPixelFormat, polygons: scene.builder.polygons(),
-                                      rigs: scene.builder.rigs(), displayScale: displayScale)
+                                      rigs: scene.builder.rigs(), effects: scene.builder.effectLibrary(),
+                                      displayScale: displayScale)
             view.delegate = renderer
         }
         let link = CADisplayLink(target: self, selector: #selector(tick(_:)))

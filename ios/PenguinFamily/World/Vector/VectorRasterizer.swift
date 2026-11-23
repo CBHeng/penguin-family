@@ -21,7 +21,9 @@ nonisolated struct RGBABitmap: Equatable, Sendable {
 ///
 /// 每個部件畫兩張：
 /// - 外框：外形用外框色填滿、再加粗描一圈。繪圖時先把整隻的外框都畫完，再畫顏色，部件重疊處才不會多出內線。
+///   外形是空的部件（ADR 0010，例如眼睛）不描共用的外框，沒有這一張。
 /// - 顏色：照順序畫每一層。
+/// 共用特效（`EffectLibrary`）的形狀也用這裡畫，只有顏色一張。
 ///
 /// 解析度照最大倍率準備（`pixelsPerUnit` = 每單位最多幾 pt × 螢幕倍率，見 `SpriteRenderer.vectorPixelsPerUnit`），縮小時交給 mipmap。
 /// 形狀一個一個分開畫，重疊的地方是聯集（和私有素材 repo 的 SVG 預覽一樣）；`clip` 每一組的形狀取聯集，組與組取交集。
@@ -32,42 +34,58 @@ nonisolated enum VectorRasterizer {
         let name: String
         /// 圖蓋住的範圍（角色畫布的單位，整數）。
         let bounds: CGRect
-        let outline: RGBABitmap
+        /// 外形是空的部件沒有外框這一張（ADR 0010）。
+        let outline: RGBABitmap?
         let fill: RGBABitmap
 
-        var byteCount: Int { outline.byteCount + fill.byteCount }
+        var byteCount: Int { (outline?.byteCount ?? 0) + fill.byteCount }
     }
 
-    /// 某個方向的每個部件，依 `drawOrder`。
+    /// 某個方向的每個部件，依 `drawOrder`。什麼形狀都沒有的部件（例如替身裡塗灰後的眼睛）不畫。
     static func rasterize(_ rig: VectorRig, facing name: String, pixelsPerUnit: Double) -> [PartImages] {
         guard let facing = rig.facings[name], let outlineColor = cgColor(rig.outline.color) else { return [] }
         return facing.drawOrder.compactMap { partName in
             guard let part = facing.parts[partName] else { return nil }
-            let bounds = Self.bounds(of: part, outlineWidth: rig.outline.width)
-            let outline = draw(bounds, pixelsPerUnit) { ctx in
-                ctx.setFillColor(outlineColor)
-                ctx.setStrokeColor(outlineColor)
-                ctx.setLineWidth(rig.outline.width * 2)
+            return images(of: part, name: partName, outline: (outlineColor, rig.outline.width), pixelsPerUnit: pixelsPerUnit)
+        }
+    }
+
+    /// 共用特效的形狀（ADR 0010）：只有顏色一張，不描外框。什麼形狀都沒有時是 nil。
+    static func rasterizeEffect(_ effect: VectorRig.Part, name: String, pixelsPerUnit: Double) -> PartImages? {
+        images(of: effect, name: name, outline: nil, pixelsPerUnit: pixelsPerUnit)
+    }
+
+    private static func images(of part: VectorRig.Part, name: String, outline: (color: CGColor, width: Double)?,
+                               pixelsPerUnit: Double) -> PartImages? {
+        guard part.hasShapes else { return nil }
+        let bounds = Self.bounds(of: part, outlineWidth: outline?.width ?? 0)
+        var outlineImage: RGBABitmap?
+        if let outline, !part.silhouette.isEmpty {
+            outlineImage = draw(bounds, pixelsPerUnit) { ctx in
+                ctx.setFillColor(outline.color)
+                ctx.setStrokeColor(outline.color)
+                ctx.setLineWidth(outline.width * 2)
                 ctx.setLineJoin(.round)
                 for shape in part.silhouette {
                     ctx.addPath(path(shape))
                     ctx.drawPath(using: .fillStroke)
                 }
             }
-            let fill = draw(bounds, pixelsPerUnit) { ctx in
-                for layer in part.layers { drawLayer(layer, in: ctx, bounds: bounds, pixelsPerUnit: pixelsPerUnit) }
-            }
-            return PartImages(name: partName, bounds: bounds, outline: outline, fill: fill)
         }
+        let fill = draw(bounds, pixelsPerUnit) { ctx in
+            for layer in part.layers { drawLayer(layer, in: ctx, bounds: bounds, pixelsPerUnit: pixelsPerUnit) }
+        }
+        return PartImages(name: name, bounds: bounds, outline: outlineImage, fill: fill)
     }
 
-    /// 某個角色所有畫好的方向的部件貼圖共佔多少位元組：每個部件外框、顏色兩張，加上 mipmap 約多 1/3。
-    /// 只用範圍算，不用真的畫；和 `rasterize` 畫出來的圖一樣大，繪圖層也照同樣的算法記錄用量。
+    /// 某個角色所有畫好的方向的部件貼圖共佔多少位元組：每個部件外框、顏色兩張（外形是空的只有顏色一張），
+    /// 加上 mipmap 約多 1/3。只用範圍算，不用真的畫；和 `rasterize` 畫出來的圖一樣大，繪圖層也照同樣的算法記錄用量。
     static func textureBytes(_ rig: VectorRig, pixelsPerUnit: Double) -> Int {
         rig.facings.values.reduce(0) { total, facing in
             facing.parts.values.reduce(total) { total, part in
+                guard part.hasShapes else { return total }
                 let size = pixelSize(bounds(of: part, outlineWidth: rig.outline.width), pixelsPerUnit)
-                return total + size.width * size.height * 4 * 2 * 4 / 3
+                return total + size.width * size.height * 4 * (part.silhouette.isEmpty ? 1 : 2) * 4 / 3
             }
         }
     }

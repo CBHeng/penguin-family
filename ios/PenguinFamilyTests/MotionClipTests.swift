@@ -147,4 +147,85 @@ struct MotionClipTests {
         let end = try #require(hello.clips["front"]).poses(at: hello.duration)
         #expect(end.values.allSatisfy { $0 == .rest })
     }
+
+    // MARK: - 換部件、特效、循環的動作（ADR 0010）
+
+    /// 第 3 版：打瞌睡是 2 秒一個循環（頭點一下、閉眼、一個 Z 飄起來）；驚醒是一次性的，0.5 秒時換回睜眼。
+    static let v3JSON = """
+        { "version": 3,
+          "motions": {
+            "doze": { "cycle": 2, "clips": { "front": {
+                "tracks": { "head": [[0, 0, 1, 1, 0, 0], [1, 10, 1, 1, 0, 1]] },
+                "visible": { "eyesClosed": [[0, 1]] },
+                "effects": [{ "name": "z", "keys": [[0, 0, 0.5, 0.5, 15, 2, 0], [1, 0, 1, 1, 16, -4, 1], [1.5, 0, 1, 1, 17, -6, 0]] }] } } },
+            "wakeStartled": { "duration": 1, "facing": "front", "clips": { "front": {
+                "tracks": { "arm": [[0, 0, 1, 1, 0, 0], [1, -90, 1, 1, 0, 0]] },
+                "visible": { "eyesClosed": [[0, 1], [0.5, 0]] } } } } },
+          "gaits": { "slow": { "tilesPerSecond": 0.5, "cycle": 1 }, "fast": { "tilesPerSecond": 1, "cycle": 0.5 } } }
+        """
+
+    @Test func version3ReadsLoopsVisibilityAndEffects() throws {
+        let motions = try Self.motions(Self.v3JSON)
+        let doze = try #require(motions.motion(named: "doze"))
+        #expect(doze.loops && doze.cycle == 2 && doze.duration == 2 && doze.facing == nil)
+        let clip = try #require(doze.clips["front"])
+        #expect(clip.visible["eyesClosed"] == [.init(time: 0, shown: true)])
+        #expect(clip.effects.map(\.name) == ["z"] && clip.effects[0].keys.count == 3)
+        #expect(try #require(motions.motion(named: "wakeStartled")).loops == false)
+        #expect(motions.problem(with: try VectorRigTests.rig(VectorRigTests.dozingJSON)) == nil)
+        // 第 2 版照樣讀得懂
+        #expect(try Self.motions().version == 2)
+    }
+
+    @Test func visibilityIsAStepAndWrapsInLoops() {
+        let clip = MotionClip(tracks: [:], visible: ["eyes": [.init(time: 0.2, shown: true), .init(time: 0.6, shown: false)]])
+        #expect(clip.visibility(at: 0)["eyes"] == true)               // 一次性：第一個之前用第一個
+        #expect(clip.visibility(at: 0.1, cycle: 1)["eyes"] == false)  // 循環：接回上一圈最後一個
+        #expect(clip.visibility(at: 0.2)["eyes"] == true)
+        #expect(clip.visibility(at: 0.59)["eyes"] == true)            // 不內插
+        #expect(clip.visibility(at: 0.6)["eyes"] == false)
+        #expect(clip.visibility(at: 1.3, cycle: 1)["eyes"] == true)
+    }
+
+    @Test func effectsInterpolateAndDisappearAtZeroAlpha() throws {
+        let clip = try #require(try Self.motions(Self.v3JSON).motion(named: "doze")?.clips["front"])
+        #expect(clip.effectPoses(at: 0, cycle: 2).isEmpty)
+        #expect(clip.effectPoses(at: 0, cycle: 2, includeHidden: true).count == 1)
+        let half = try #require(clip.effectPoses(at: 0.5, cycle: 2).first)
+        #expect(half.name == "z" && abs(half.alpha - 0.5) < 1e-12)
+        #expect(abs(half.pose.scaleX - 0.75) < 1e-12 && abs(half.pose.x - 15.5) < 1e-12 && abs(half.pose.y + 1) < 1e-12)
+        #expect(clip.effectPoses(at: 1, cycle: 2).first?.alpha == 1)
+        #expect(clip.effectPoses(at: 1.7, cycle: 2).isEmpty)                    // 最後一格之後接回第一格：都看不到
+    }
+
+    @Test func loopingMotionNeverHoldsTheEnd() throws {
+        let doze = try #require(try Self.motions(Self.v3JSON).motion(named: "doze"))
+        let at1 = try #require(doze.pose(facing: .frontLeft, source: "front", at: 1))
+        let at3 = try #require(doze.pose(facing: .frontLeft, source: "front", at: 3))
+        #expect(at1 == at3 && at1.facing == .frontLeft && at1.shown["eyesClosed"] == true && at1.parts["head"]?.rotate == 10)
+        let wake = try #require(try Self.motions(Self.v3JSON).motion(named: "wakeStartled"))
+        #expect(wake.pose(facing: .front, source: "front", at: 5)?.parts["arm"]?.rotate == -90)   // 一次性的停在最後
+        #expect(wake.pose(facing: .front, source: "front", at: 5)?.shown["eyesClosed"] == false)
+        #expect(wake.pose(facing: .front, source: "frontLeft", at: 0) == nil)                     // 沒有這個方向的片段
+    }
+
+    @Test func rejectsBadVersion3Data() throws {
+        func problem(_ old: String, _ new: String) -> Error? {
+            do {
+                _ = try Self.motions(Self.v3JSON.replacingOccurrences(of: old, with: new))
+                return nil
+            } catch {
+                return error
+            }
+        }
+        #expect(problem("[1, 0, 1, 1, 16, -4, 1]", "[1, 0, 1, 1, 16, -4, 2]") as? CharacterMotionsError == .invalid("doze.front.effects[0]"))
+        #expect(problem("[1, 0, 1, 1, 16, -4, 1]", "[1, 0, 1, 1, 16, -4]") is DecodingError)
+        #expect(problem("[[0, 1], [0.5, 0]]", "[[0, 1], [0.5, 2]]") is DecodingError)
+        #expect(problem("[[0, 1], [0.5, 0]]", "[[0.5, 1], [0.2, 0]]") as? CharacterMotionsError == .invalid("wakeStartled.front.visible.eyesClosed"))
+        #expect(problem("\"cycle\": 2,", "") is DecodingError)                       // 沒有 duration 也沒有 cycle
+        #expect(problem("\"version\": 3", "\"version\": 4") as? CharacterMotionsError == .unsupportedVersion(4))
+        // 顯示時間表用到造型沒有的部件：對不上
+        let motions = try? Self.motions(Self.v3JSON)
+        #expect(motions?.problem(with: try VectorRigTests.rig()) == "doze.front.visible.eyesClosed")
+    }
 }

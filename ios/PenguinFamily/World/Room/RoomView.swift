@@ -9,6 +9,8 @@ import SwiftUI
 /// - 雙指捏合縮放；一段時間沒碰，鏡頭慢慢移回第一隻身邊（遊戲設計 2026-11-16）。
 /// 畫面本身不會移動，所以手勢的座標就是畫面上的位置。
 ///
+/// 除錯用（只在 Debug 編譯）：右下角的「加睏意」按鈕，點一次台上每一隻的睏意加 `debugSleepinessStep`（作者 2026-11-20 要求）。
+///
 /// 箱庭只建一次：第一次出現時才建，之後一直沿用（作者 2026-11-18 決定）。不在 `init` 裡建：
 /// 上一層的 `body` 每次重算都會重新呼叫 `init`，`State(initialValue:)` 的參數會真的算出來再被丟掉；
 /// 建一次要畫整個房間，放在 `init` 會在主執行緒白做。
@@ -18,8 +20,13 @@ struct RoomView: View {
     let cast: [RoomScene.Member]
     /// 一開始在台上的角色與站的位置，依上台先後。只在建箱庭時讀一次。
     let start: [(id: CharacterID, position: TilePosition)]
+    /// 共用特效的形狀（ADR 0010）。只在建箱庭時讀一次。
+    let effects: EffectLibrary
     /// 模擬跑出來的事（例如主人點了哪一隻），交給外面記錄。
     var onOutputs: ([Simulation.Output]) -> Void = { _ in }
+
+    /// 除錯按鈕點一次加多少睏意（0～100）。
+    static let debugSleepinessStep = 25.0
 
     /// 第一次出現前是 nil。
     @State private var scene: RoomScene?
@@ -27,10 +34,11 @@ struct RoomView: View {
 
     /// 只記下參數，不建箱庭（見上面的說明）。
     init(room: RoomLayout, cast: [RoomScene.Member], start: [(id: CharacterID, position: TilePosition)],
-         onOutputs: @escaping ([Simulation.Output]) -> Void = { _ in }) {
+         effects: EffectLibrary = .empty, onOutputs: @escaping ([Simulation.Output]) -> Void = { _ in }) {
         self.room = room
         self.cast = cast
         self.start = start
+        self.effects = effects
         self.onOutputs = onOutputs
     }
 
@@ -48,9 +56,28 @@ struct RoomView: View {
         .onAppear {
             if scene == nil {
                 scene = RoomScene(room: room, cast: cast, start: start, seed: .random(in: .min ... .max),
-                                  now: CACurrentMediaTime())
+                                  now: CACurrentMediaTime(), effects: effects)
             }
         }
+        #if DEBUG
+        .overlay(alignment: .bottomTrailing) {
+            if let scene {
+                Button {
+                    scene.runner.send(.addSleepiness(Self.debugSleepinessStep))
+                } label: {
+                    Label("睏意 +\(Int(Self.debugSleepinessStep))", systemImage: "moon.zzz")
+                        .font(.caption)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(.black.opacity(0.45), in: Capsule())
+                        .foregroundStyle(.white)
+                }
+                .padding(.trailing, 16)
+                .padding(.bottom, 40)
+                .accessibilityLabel("除錯：加睏意")
+            }
+        }
+        #endif
         .accessibilityElement()
         .accessibilityLabel("箱庭")
         .accessibilityAction(named: "點第一隻") {

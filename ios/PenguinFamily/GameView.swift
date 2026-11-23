@@ -17,10 +17,13 @@ struct GameView: View {
     /// 一家的每一隻，依名單的順序。
     private let cast: [RoomScene.Member]
     private let hasCharacters: Bool
+    /// 共用特效的形狀（ADR 0010）。
+    private let effects: EffectLibrary
 
     /// `wander` 是 App 裡的預設閒晃；角色包帶了自己的 `wander.json` 的那隻用自己的（作者 2026-11-19 決定每隻各自獨立）。
-    init(family: [FamilyMember], wander: WanderConfig?, events: EventLog?) {
+    init(family: [FamilyMember], wander: WanderConfig?, effects: EffectLibrary = .empty, events: EventLog?) {
         self.events = events
+        self.effects = effects
         cast = RoomScene.Member.cast(family, defaultWander: wander)
         hasCharacters = family.contains { $0.character != nil }
     }
@@ -44,7 +47,7 @@ struct GameView: View {
                 .ignoresSafeArea()
             RoomView(room: Self.room, cast: cast,
                      start: Self.startPositions(Self.initialStage(cast.map(\.id)), in: Self.room),
-                     onOutputs: record)
+                     effects: effects, onOutputs: record)
             .ignoresSafeArea()
             if !hasCharacters {
                 Text("沒有角色包")
@@ -67,5 +70,5 @@ struct GameView: View {
 }
 
 #Preview("沒有角色包") {
-    GameView(family: CharacterPackLibrary.loadFamily(in: nil), wander: WanderConfig.bundled(), events: nil)
+    GameView(family: CharacterPackLibrary.loadFamily(in: nil), wander: WanderConfig.bundled(), effects: .bundled(), events: nil)
 }
