@@ -1,31 +1,50 @@
 import Foundation
 
-/// 一隻角色的動作資料（ADR 0009）：一次性的動作（例如哈囉）與慢、快兩種步態，都是私有素材 repo 匯出的片段。
+/// 一隻角色的動作資料（ADR 0009、0010）：動作（例如哈囉、打瞌睡）與慢、快兩種步態，都是私有素材 repo 匯出的片段。
 ///
 /// 動作的算式只在私有素材 repo（作者在那裡設計、預覽），匯出時取樣成關鍵影格，放在角色包的 `motion.json`。
 /// App 只照片段播，不分物種：加一種動物、加一個動作都不用改程式。每隻各一份（作者 2026-11-19 決定），
 /// 改一隻不影響另一隻。模擬讀動作的長度、播的時候轉向哪裡、一秒走幾格；畫面準備讀某一刻每個部件的樣子。
 ///
-/// 格式（第 2 版）：
+/// 格式（第 3 版，ADR 0010；第 2 版也讀得懂，那時還沒有循環的動作，片段也沒有換部件與特效）：
 /// ```
-/// { "version": 2,
-///   "motions": { "hello": { "duration": 2.8, "facing": "front", "clips": { "front": <片段> } } },
+/// { "version": 3,
+///   "motions": { "hello": { "duration": 2.8, "facing": "front", "clips": { "front": <片段> } },
+///                "doze": { "cycle": 9, "clips": { "front": <片段>, "frontLeft": <片段>, "backLeft": <片段> } } },
 ///   "gaits": { "slow": { "tilesPerSecond": 0.5, "cycle": 1, "clips": { "frontLeft": <片段>, "backLeft": <片段> } },
 ///              "fast": { ... } } }
 /// ```
 /// - 片段見 `MotionClip`。片段的方向是造型畫好的方向；翻轉的方向用來源的片段，由造型翻轉。
-/// - 一次性動作的名稱和意圖對應（`CharacterBehavior.Intent.motionName`）；角色沒有某個動作時，那個意圖馬上算播完。
+/// - 動作的名稱和意圖對應（`CharacterBehavior.Intent.motionName`）；角色沒有某個動作時，那個意圖馬上算播完。
+/// - 動作寫了 `cycle` 就是循環的（ADR 0010，例如打瞌睡）：一直照 `cycle` 接回開頭，不會播完，由狀態機換下一件事；
+///   `duration` 可以不寫。沒寫 `cycle` 的是一次性的，播 `duration` 秒。
 /// - 步態的 `cycle` 是片段一個循環幾秒；沒有片段的方向（例如只有正面的造型）照速度平移、不動手腳。
 nonisolated struct CharacterMotions: Equatable, Sendable {
-    static let supportedVersion = 2
+    static let supportedVersion = 3
+    /// 讀得懂的版本：第 2 版（ADR 0009）與第 3 版（ADR 0010）。
+    static let readableVersions = 2...3
 
-    /// 一次性的動作：播完要幾秒、播的時候轉向哪裡、每個畫好的方向一段片段。
+    /// 一個動作：播多久（或一個循環多久）、播的時候轉向哪裡、每個畫好的方向一段片段。
     struct Motion: Equatable, Sendable {
+        /// 一次性的播完要幾秒；循環的等於 `cycle`。
         var duration: Double
         /// 播的時候轉向哪裡；nil 維持原本的方向。
         var facing: Facing? = nil
         /// 方向名稱 → 片段。沒有這個方向的片段時，那個方向站著不動。
         var clips: [String: MotionClip] = [:]
+        /// 循環的動作一個循環幾秒（ADR 0010）；一次性的是 nil。
+        var cycle: Double? = nil
+
+        /// 一直循環、不會播完。
+        var loops: Bool { cycle != nil }
+
+        /// 第 `t` 秒（從開始播算起）的樣子：一次性的停在兩端，循環的接回開頭。這個方向沒有片段時是 nil。
+        func pose(facing: Facing, source: String, at t: Double) -> CharacterPose? {
+            guard let clip = clips[source] else { return nil }
+            let time = cycle == nil ? min(max(0, t), duration) : max(0, t)
+            return CharacterPose(facing: facing, parts: clip.poses(at: time, cycle: cycle),
+                                 shown: clip.visibility(at: time, cycle: cycle), effects: clip.effectPoses(at: time, cycle: cycle))
+        }
     }
 
     /// 一種步態：一秒走幾格、一個循環幾秒、每個畫好的斜向一段循環的片段。
@@ -74,11 +93,12 @@ nonisolated struct CharacterMotions: Equatable, Sendable {
 
     /// 檢查數字合不合理；不合理時丟出 `CharacterMotionsError`，說明是哪裡（例如 `hello.front.arm`）。
     func validate() throws {
-        guard version == Self.supportedVersion else { throw CharacterMotionsError.unsupportedVersion(version) }
+        guard Self.readableVersions.contains(version) else { throw CharacterMotionsError.unsupportedVersion(version) }
         for (name, motion) in motions.sorted(by: { $0.key < $1.key }) {
             guard motion.duration.isFinite, motion.duration > 0 else { throw CharacterMotionsError.invalid("\(name).duration") }
+            if let cycle = motion.cycle, !(cycle.isFinite && cycle > 0) { throw CharacterMotionsError.invalid("\(name).cycle") }
             for (facing, clip) in motion.clips.sorted(by: { $0.key < $1.key }) {
-                if let part = clip.problem(length: motion.duration, loops: false) {
+                if let part = clip.problem(length: motion.cycle ?? motion.duration, loops: motion.loops) {
                     throw CharacterMotionsError.invalid("\(name).\(facing).\(part)")
                 }
             }
@@ -97,8 +117,8 @@ nonisolated struct CharacterMotions: Equatable, Sendable {
         }
     }
 
-    /// 片段用到的方向與部件，造型裡都有嗎；對不上時回傳哪裡（例如 `hello.front.arm`）。
-    /// 片段只能用畫好的方向（翻轉的方向由造型從來源翻過去）。
+    /// 片段用到的方向與部件（含顯示或藏起來的部件），造型裡都有嗎；對不上時回傳哪裡（例如 `hello.front.arm`）。
+    /// 片段只能用畫好的方向（翻轉的方向由造型從來源翻過去）。特效的名稱不在這裡檢查：沒有那個形狀時畫面準備直接不畫。
     func problem(with rig: VectorRig) -> String? {
         let clips = motions.flatMap { name, motion in motion.clips.map { ("\(name).\($0.key)", $0.key, $0.value) } }
             + CharacterBehavior.Pace.allCases.flatMap { pace in
@@ -107,6 +127,7 @@ nonisolated struct CharacterMotions: Equatable, Sendable {
         for (label, facing, clip) in clips.sorted(by: { $0.0 < $1.0 }) {
             guard let drawn = rig.facings[facing] else { return label }
             if let part = clip.tracks.keys.sorted().first(where: { drawn.parts[$0] == nil }) { return "\(label).\(part)" }
+            if let part = clip.visible.keys.sorted().first(where: { drawn.parts[$0] == nil }) { return "\(label).visible.\(part)" }
         }
         return nil
     }
@@ -125,13 +146,20 @@ nonisolated extension CharacterMotions: Decodable {
 }
 
 nonisolated extension CharacterMotions.Motion: Decodable {
-    private enum CodingKeys: String, CodingKey { case duration, facing, clips }
+    private enum CodingKeys: String, CodingKey { case duration, facing, clips, cycle }
 
+    /// 循環的動作可以只寫 `cycle`，這時 `duration` 等於它。
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        self.init(duration: try c.decode(Double.self, forKey: .duration),
+        let cycle = try c.decodeIfPresent(Double.self, forKey: .cycle)
+        guard let duration = try c.decodeIfPresent(Double.self, forKey: .duration) ?? cycle else {
+            throw DecodingError.keyNotFound(CodingKeys.duration, .init(codingPath: c.codingPath,
+                                                                      debugDescription: "動作要有 duration 或 cycle"))
+        }
+        self.init(duration: duration,
                   facing: try c.decodeIfPresent(Facing.self, forKey: .facing),
-                  clips: try c.decodeIfPresent([String: MotionClip].self, forKey: .clips) ?? [:])
+                  clips: try c.decodeIfPresent([String: MotionClip].self, forKey: .clips) ?? [:],
+                  cycle: cycle)
     }
 }
 

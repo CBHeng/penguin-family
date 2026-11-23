@@ -34,13 +34,16 @@ final class RoomScene {
 
     /// `start` 是一開始在台上的角色與站的位置，依上台先後；第一個節拍上台、開始閒晃。
     /// `seed` 是閒晃的亂數種子，`now` 是現在的真實時間。
-    init(room: RoomLayout, cast: [Member], start: [(id: CharacterID, position: TilePosition)], seed: UInt64, now: Double) {
+    /// `effects` 是共用特效的形狀（ADR 0010）。
+    init(room: RoomLayout, cast: [Member], start: [(id: CharacterID, position: TilePosition)], seed: UInt64, now: Double,
+         effects: EffectLibrary = .empty) {
         Self.createdCount += 1
         var simulation = Simulation(room: room, cast: cast.map { .init(id: $0.id, motions: $0.motions, wander: $0.wander) },
                                     seed: seed)
         for character in start { simulation.send(.enter(character.id, at: character.position)) }
         runner = SimulationRunner(simulation: simulation, now: now)
-        builder = FrameBuilder(room: room, cast: cast.map { .init(id: $0.id, vector: $0.vector, motions: $0.motions) })
+        builder = FrameBuilder(room: room, cast: cast.map { .init(id: $0.id, vector: $0.vector, motions: $0.motions) },
+                               effects: effects)
     }
 
     /// 主人點了畫面上的這一點：點到角色就重新計算閒置，並告訴模擬主人點了牠（`date` 是點的當下，記錄用）。

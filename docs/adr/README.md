@@ -15,7 +15,8 @@
 | [0006](0006-metal-rendering.md) | 箱庭用 Metal 畫，遊戲迴圈有變化才畫（「對齊像素格子、取最近的像素」已由 0007 取代；推進世界移到模擬的執行緒，見 0008） | accepted |
 | [0007](0007-flat-vector-art.md) | 角色與箱庭改走平面向量：企鵝部件畫成貼圖再轉動，箱庭用多邊形；形狀格式自己定 | accepted |
 | [0008](0008-simulation-frame-render-layers.md) | 狀態與繪圖分成模擬、畫面準備、繪圖三層；模擬在自己的執行緒、固定節拍每秒 30 次，畫面內插；狀態機不參與 render | accepted |
-| [0009](0009-characters-species-motion-data.md) | 角色不分物種：名單（幾隻、哪種動物）與動作都是資料，動作由私有素材 repo 匯出成關鍵影格，App 只放播放器 | accepted |
+| [0009](0009-characters-species-motion-data.md) | 角色不分物種：名單（幾隻、哪種動物）與動作都是資料，動作由私有素材 repo 匯出成關鍵影格，App 只放播放器（片段的格式由 0010 擴充） | accepted |
+| [0010](0010-motion-visibility-loops-effects.md) | 片段可以換部件（藏起來、換顯示哪一個）、動作可以循環；特效的形狀不分物種共用，怎麼動照樣是匯出的片段（擴充 0009） | accepted |
 
 ## 已取代
 

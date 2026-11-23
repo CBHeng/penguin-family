@@ -80,6 +80,8 @@ final class FrameBuilder {
     /// 後台名單每一隻的造型與動作。
     private let castRigs: [CharacterID: VectorRig]
     private let castMotions: [CharacterID: CharacterMotions]
+    /// 共用特效的形狀（ADR 0010）：這裡只用轉軸，貼圖由 render 載入時畫。
+    private let effects: EffectLibrary
     /// 畫面大小（pt）與 1pt 幾個實體像素。還沒量到畫面大小前是 0。
     private(set) var viewport = CGSize.zero
     private(set) var displayScale = 1.0
@@ -103,9 +105,10 @@ final class FrameBuilder {
     /// 上一格畫的角色，前面（離主人近）的在前；點擊判斷用。
     private var lastCharacters: [Sprite] = []
 
-    init(room: RoomLayout, cast: [CastMember]) {
+    init(room: RoomLayout, cast: [CastMember], effects: EffectLibrary = .empty) {
         self.room = room
         self.cast = cast
+        self.effects = effects
         castRigs = Dictionary(uniqueKeysWithValues: cast.map { ($0.id, $0.vector) })
         castMotions = Dictionary(uniqueKeysWithValues: cast.map { ($0.id, $0.motions) })
         let iso = IsoProjection(room: room)
@@ -131,6 +134,9 @@ final class FrameBuilder {
 
     /// 後台名單每一隻的造型（沒有角色包的是替身），包含還沒上台的；render 載入時一次把部件畫成貼圖。
     func rigs() -> [CharacterID: VectorRig] { castRigs }
+
+    /// 共用特效的形狀（ADR 0010）；render 載入時一次畫成貼圖。
+    func effectLibrary() -> EffectLibrary { effects }
 
     // MARK: - 每一格
 
@@ -203,7 +209,8 @@ final class FrameBuilder {
 
     /// 一隻角色這一格的樣子（ADR 0009）：照牠的動作資料找這個方向的片段，播到這一刻。不分物種。
     /// - 移動：步態的循環片段，播到走了幾秒（兩份快照之間內插；重新起步時不往回算）。
-    /// - 播動作：一次性的片段，照「畫的時間 − 開始的時間」播（還沒開始算 0 秒，播完停在最後一格）。
+    /// - 播動作：照「畫的時間 − 開始的時間」播（還沒開始算 0 秒）；一次性的播完停在最後一格，循環的接回開頭（ADR 0010）。
+    /// - 片段裡顯示或藏起來的部件與特效（ADR 0010）一起放進姿勢。
     /// - 站著、等別隻讓路，或這個方向沒有片段：每個部件在原位。
     /// - 造型沒有這個方向時（例如灰色剪影沒有斜向）面向鏡頭。翻轉的方向用來源的片段。
     static func pose(of character: SimulationSnapshot.Character, before: SimulationSnapshot.Character?, alpha: Double,
@@ -218,11 +225,11 @@ final class FrameBuilder {
             }
             let gait = motions.gait(for: pace)
             guard let clip = gait.clips[source] else { return CharacterPose(facing: facing) }
-            return CharacterPose(facing: facing, parts: clip.poses(at: t, cycle: gait.cycle))
+            return CharacterPose(facing: facing, parts: clip.poses(at: t, cycle: gait.cycle),
+                                 shown: clip.visibility(at: t, cycle: gait.cycle), effects: clip.effectPoses(at: t, cycle: gait.cycle))
         case .motion(let intent, let since):
-            guard let name = intent.motionName, let motion = motions.motion(named: name),
-                  let clip = motion.clips[source] else { return CharacterPose(facing: facing) }
-            return CharacterPose(facing: facing, parts: clip.poses(at: min(max(0, time - since), motion.duration)))
+            guard let name = intent.motionName, let motion = motions.motion(named: name) else { return CharacterPose(facing: facing) }
+            return motion.pose(facing: facing, source: source, at: time - since) ?? CharacterPose(facing: facing)
         case .still:
             return CharacterPose(facing: facing)
         }
@@ -288,19 +295,25 @@ final class FrameBuilder {
     }
 
     /// 繪製清單：角色每個部件的矩陣把部件的畫布座標換到畫面上的 pt（姿勢 → 放到箱庭上 → 鏡頭 → 縮放）。
+    /// 藏起來的部件不放進去；看得到的特效緊接在那隻角色後面（蓋在牠上面，ADR 0010），沒有那個形狀的特效不畫。
     private func drawList(_ sprites: [Sprite], _ transform: ViewTransform) -> DrawList {
-        let items: [DrawList.Item] = sprites.compactMap { sprite in
+        let items: [DrawList.Item] = sprites.flatMap { sprite -> [DrawList.Item] in
             switch sprite.key {
             case .background, .furniture:
-                return .polygons(sprite.key)
+                return [.polygons(sprite.key)]
             case .character(let id):
-                guard let pose = sprite.pose, let frame = castRigs[id]?.frame(pose) else { return nil }
+                guard let pose = sprite.pose, let rig = castRigs[id], let frame = rig.frame(pose) else { return [] }
                 let toScreen = Affine2D.scale(transform.pointsPerUnit, transform.pointsPerUnit)
                     * Affine2D.translation(sprite.x - transform.topLeftX, sprite.y - transform.topLeftY)
-                let parts = frame.look.drawOrder.map {
+                let parts = rig.shownParts(frame.look, pose).map {
                     DrawList.Part(name: $0, transform: toScreen * (frame.transforms[$0] ?? .identity))
                 }
-                return .character(id, look: frame.look.source, parts: parts)
+                let effectItems = pose.effects.compactMap { effect -> DrawList.Item? in
+                    guard let shape = effects.effects[effect.name] else { return nil }
+                    let m = rig.effectMatrix(effect, pivot: shape.pivot, look: frame.look)
+                    return .effect(effect.name, transform: toScreen * m, alpha: effect.alpha)
+                }
+                return [.character(id, look: frame.look.source, parts: parts)] + effectItems
             }
         }
         return DrawList(viewportWidth: viewport.width, viewportHeight: viewport.height, topLeftX: transform.topLeftX,

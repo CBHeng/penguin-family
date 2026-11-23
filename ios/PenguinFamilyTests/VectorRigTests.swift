@@ -213,9 +213,10 @@ struct VectorRigTests {
         let parts = VectorRasterizer.rasterize(try Self.rig(), facing: "front", pixelsPerUnit: ppu)
         #expect(parts.map(\.name) == ["body", "arm", "head"])
         let body = parts[0], b = body.bounds
+        let outline = try #require(body.outline)
         // 範圍是整數單位，蓋住外形、外框、每一層（肚子到 y = 20）與 1 單位的邊
         #expect(b.minX == 2 && b.minY == 8 && b.maxX == 18 && b.maxY == 21)
-        #expect(body.fill.width == 64 && body.fill.height == 52 && body.outline.width == 64)
+        #expect(body.fill.width == 64 && body.fill.height == 52 && outline.width == 64)
         // 顏色：身體邊上是藍，肚子是米白；肚子超出身體的部分被裁掉
         #expect(Self.pixel(body.fill, b, ppu, 5, 14) == [0xba, 0xcc, 0xdc, 255])
         #expect(Self.pixel(body.fill, b, ppu, 10, 16) == [0xf6, 0xf0, 0xe2, 255])
@@ -223,9 +224,9 @@ struct VectorRigTests {
         // 好幾組裁切取交集：陰影只在身體與肚子都有的地方
         #expect(Self.pixel(body.fill, b, ppu, 10, 17.3) == [0xe2, 0xd9, 0xc6, 255])
         // 外框：形狀外面 0.75 單位內是外框色，再外面是透明
-        #expect(Self.pixel(body.outline, b, ppu, 3.6, 14) == [0x52, 0x5e, 0x70, 255])
-        #expect(Self.pixel(body.outline, b, ppu, 10, 14) == [0x52, 0x5e, 0x70, 255])
-        #expect(Self.pixel(body.outline, b, ppu, 3.1, 9.1)[3] == 0)
+        #expect(Self.pixel(outline, b, ppu, 3.6, 14) == [0x52, 0x5e, 0x70, 255])
+        #expect(Self.pixel(outline, b, ppu, 10, 14) == [0x52, 0x5e, 0x70, 255])
+        #expect(Self.pixel(outline, b, ppu, 3.1, 9.1)[3] == 0)
         #expect(body.byteCount == 64 * 52 * 4 * 2)
     }
 
@@ -267,5 +268,58 @@ struct VectorRigTests {
         let root = try CharacterDisplayTests.makeRoot(["a": Self.json])
         let family = CharacterPackLibrary.loadFamily(in: root)
         #expect(family[0].character?.vector.front.canvas == VectorRig.Size(width: 20, height: 20))
+    }
+
+    // MARK: - 藏起來、不描共用外框的部件（ADR 0010）
+
+    /// 假角色多一個平常藏起來、不描共用外框的閉眼（畫在頭上）。
+    static let dozingJSON = json
+        .replacingOccurrences(of: "\"drawOrder\": [\"body\", \"arm\", \"head\"],",
+                              with: "\"drawOrder\": [\"body\", \"arm\", \"head\", \"eyesClosed\"],")
+        .replacingOccurrences(of: "\"parts\": {", with: """
+        "parts": {
+         "eyesClosed": {"pivot": {"x": 10, "y": 10}, "hidden": true, "silhouette": [],
+                        "layers": [{"stroke": "#26262c", "width": 0.5, "shapes": [{"path": [["M", 8, 7], ["L", 10, 7]]}]}]},
+        """)
+
+    @Test func partsCanBeHiddenAndSkipTheSharedOutline() throws {
+        let rig = try Self.rig(Self.dozingJSON)
+        let eyes = try #require(rig.front.parts["eyesClosed"])
+        #expect(eyes.hidden && eyes.silhouette.isEmpty)
+        #expect(rig.front.parts["head"]?.hidden == false)
+        let images = VectorRasterizer.rasterize(rig, facing: "front", pixelsPerUnit: 4)
+        #expect(images.map(\.name) == ["body", "arm", "head", "eyesClosed"])
+        let closed = try #require(images.last)
+        #expect(closed.outline == nil && closed.byteCount == closed.fill.byteCount)
+        // 平常不畫：片段說要顯示才畫
+        let look = try #require(rig.look("front"))
+        #expect(rig.shownParts(look, CharacterPose(facing: .front)) == ["body", "arm", "head"])
+        #expect(rig.shownParts(look, CharacterPose(facing: .front, shown: ["eyesClosed": true, "arm": false]))
+                == ["body", "head", "eyesClosed"])
+        let drawn = images.reduce(0) { $0 + $1.byteCount * 4 / 3 }
+        #expect(VectorRasterizer.textureBytes(rig, pixelsPerUnit: 4) == drawn)
+    }
+
+    @Test func partWithNothingToDrawIsRejected() {
+        #expect(throws: VectorRigError.missingPart("eyesClosed")) {
+            try Self.rig(Self.dozingJSON.replacingOccurrences(
+                of: "[{\"stroke\": \"#26262c\", \"width\": 0.5, \"shapes\": [{\"path\": [[\"M\", 8, 7], [\"L\", 10, 7]]}]}]",
+                with: "[]"))
+        }
+    }
+
+    /// 特效在翻轉的方向只翻位置：轉軸落在鏡像的位置，形狀不翻（行列式是正的）、轉的方向相反。
+    @Test func mirroredEffectsMoveButDoNotFlip() throws {
+        let rig = try Self.rig(Self.walkingJSON)
+        let effect = EffectPose(name: "z", pose: PartPose(rotate: 10, scaleX: 2, scaleY: 2, x: 15, y: 4), alpha: 1)
+        let pivot = VectorRig.Point(x: 0, y: 0)
+        let left = rig.effectMatrix(effect, pivot: pivot, look: try #require(rig.look("frontLeft")))
+        let right = rig.effectMatrix(effect, pivot: pivot, look: try #require(rig.look("frontRight")))
+        #expect(left == effect.pose.matrix(pivot: pivot))
+        let at = right.apply(0, 0)
+        #expect(abs(at.x - (2 * 10 - 15)) < 1e-12 && abs(at.y - 4) < 1e-12)        // 腳底中心 x = 10
+        #expect(right.a * right.d - right.b * right.c > 0)
+        let expected = Affine2D.rotation(degrees: -10) * .scale(2, 2)
+        #expect(abs(right.a - expected.a) < 1e-12 && abs(right.b - expected.b) < 1e-12)
     }
 }

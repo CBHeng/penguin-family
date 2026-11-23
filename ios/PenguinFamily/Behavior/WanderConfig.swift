@@ -7,7 +7,7 @@ import os
 /// 公開 repo 的 `Resources/wander.json` 是預設，給沒有角色包、或角色包沒帶這個檔的那隻。數字在實機上調。
 /// 秒數、格數都寫成範圍 `[最少, 最多]`，每次在範圍裡隨機挑。
 ///
-/// - `version`：格式版本，目前是 2。第 1 版的 `pace` 寫成 `walk`、`trot`（企鵝的慢走、小跑），也讀得懂。
+/// - `version`：格式版本，目前是 3。第 1 版的 `pace` 寫成 `walk`、`trot`（企鵝的慢走、小跑），也讀得懂；第 2 版沒有 `sleepiness`。
 /// - `pace`：移動時慢（`slow`）、快（`fast`）的權重，不分物種（ADR 0009）。平常慢，偶爾快。
 /// - `breaks`（可以不寫）：路長的時候，每走 `everyTiles` 格停一下，停 `seconds` 秒（「走幾步就停一下」）。
 /// - `glanceFacings`：東張西望時會看哪些方向（`front`、`frontLeft`、`backLeft`、`frontRight`、`backRight`）。
@@ -19,8 +19,17 @@ import os
 ///   - `lookAround`：東張西望，連續看 `glances` 個方向，每個看 `seconds` 秒。
 ///   - `stayClose`：走去黏著另一隻：走到牠旁邊緊鄰的一格，面向牠待 `seconds` 秒（作者 2026-11-19 決定）。
 ///     牠正在走的話，走去牠要去的那一格旁邊。台上只有自己時不挑。
+/// - `sleepiness`（第 3 版，可以不寫；不寫就不會打瞌睡）：睏意（0～100，作者 2026-11-20 決定，見 `Sleepiness`）。
+///   - `start`：打開 App 時的睏意，在範圍裡隨機挑。
+///   - `risePerMinute`：醒著時每分鐘增加多少：站著（`still`，含播動作）、慢走（`slow`）、快走（`fast`）。
+///   - `doze`：打瞌睡。睏意至少 `above` 時，閒晃挑下一件事時有 `chance`（0～1）的機率去打瞌睡；
+///     `chanceRise`（可以不寫）：睏意比 `above` 每多 `every`，機率再加 `add`，最多到 1（作者 2026-11-23 要求，越睏越容易打瞌睡）；
+///     打瞌睡的循環裡每分鐘固定下降 `fallPerMinute`（直線下降；坐下、自己醒來、驚醒的那幾秒照 `still` 增加），
+///     降到 `wakeBelow` 就自己醒來。要等打瞌睡的動作播完那一個循環才起來，所以醒來時會比 `wakeBelow` 再低一點
+///     （最多低一個循環降的量）；
+///     醒來（自己醒或被點醒）後 `cooldown` 秒內不再打瞌睡。
 nonisolated struct WanderConfig: Decodable, Equatable, Sendable {
-    static let supportedVersion = 2
+    static let supportedVersion = 3
 
     enum Kind: String, Decodable, Sendable {
         case visit, stroll, zoneOut, lookAround, stayClose
@@ -52,11 +61,47 @@ nonisolated struct WanderConfig: Decodable, Equatable, Sendable {
         var seconds: ClosedRange<Double>
     }
 
+    /// 睏意的數字（第 3 版）。
+    struct SleepinessConfig: Decodable, Equatable, Sendable {
+        struct Rise: Decodable, Equatable, Sendable {
+            var still: Double
+            var slow: Double
+            var fast: Double
+        }
+
+        struct Doze: Decodable, Equatable, Sendable {
+            /// 睏意每多 `every`，機率再加 `add`。
+            struct ChanceRise: Decodable, Equatable, Sendable {
+                var every: Double
+                var add: Double
+            }
+
+            var above: Double
+            var chance: Double
+            var fallPerMinute: Double
+            var wakeBelow: Double
+            var cooldown: Double
+            var chanceRise: ChanceRise? = nil
+
+            /// 睏意 `sleepiness` 時去打瞌睡的機率：不到 `above` 是 0；到了是 `chance`，之後每多滿 `every` 再加 `add`，最多 1。
+            func chance(at sleepiness: Double) -> Double {
+                guard sleepiness >= above else { return 0 }
+                guard let rise = chanceRise else { return chance }
+                return min(1, chance + ((sleepiness - above) / rise.every).rounded(.down) * rise.add)
+            }
+        }
+
+        var start: ClosedRange<Double>
+        var risePerMinute: Rise
+        var doze: Doze
+    }
+
     var version: Int
     var pace: PaceWeights
     var breaks: Breaks? = nil
     var glanceFacings: [Facing] = []
     var activities: [Activity]
+    var sleepiness: SleepinessConfig? = nil
 
     static func decode(_ data: Data) throws -> WanderConfig {
         let config = try JSONDecoder().decode(WanderConfig.self, from: data)
@@ -68,6 +113,28 @@ nonisolated struct WanderConfig: Decodable, Equatable, Sendable {
     func validate() throws {
         guard (1...Self.supportedVersion).contains(version) else { throw WanderConfigError.unsupportedVersion(version) }
         guard pace.slow >= 0, pace.fast >= 0, pace.slow + pace.fast > 0 else { throw WanderConfigError.invalid("pace") }
+        if let sleepiness {
+            let range = Sleepiness.range, rise = sleepiness.risePerMinute, doze = sleepiness.doze
+            guard range.contains(sleepiness.start.lowerBound), range.contains(sleepiness.start.upperBound) else {
+                throw WanderConfigError.invalid("sleepiness.start")
+            }
+            guard [rise.still, rise.slow, rise.fast].allSatisfy({ $0 >= 0 && $0.isFinite }) else {
+                throw WanderConfigError.invalid("sleepiness.risePerMinute")
+            }
+            guard range.contains(doze.above), range.contains(doze.wakeBelow), doze.wakeBelow < doze.above else {
+                throw WanderConfigError.invalid("sleepiness.doze.above")
+            }
+            guard (0...1).contains(doze.chance) else { throw WanderConfigError.invalid("sleepiness.doze.chance") }
+            if let rise = doze.chanceRise {
+                guard rise.every > 0, rise.every.isFinite, (0...1).contains(rise.add) else {
+                    throw WanderConfigError.invalid("sleepiness.doze.chanceRise")
+                }
+            }
+            guard doze.fallPerMinute > 0, doze.fallPerMinute.isFinite else {
+                throw WanderConfigError.invalid("sleepiness.doze.fallPerMinute")
+            }
+            guard doze.cooldown >= 0 else { throw WanderConfigError.invalid("sleepiness.doze.cooldown") }
+        }
         if let breaks {
             guard breaks.everyTiles.lowerBound >= 1, breaks.seconds.lowerBound >= 0 else {
                 throw WanderConfigError.invalid("breaks")
@@ -117,7 +184,7 @@ nonisolated struct WanderConfig: Decodable, Equatable, Sendable {
 
 nonisolated extension WanderConfig {
     private enum CodingKeys: String, CodingKey {
-        case version, pace, breaks, glanceFacings, activities
+        case version, pace, breaks, glanceFacings, activities, sleepiness
     }
 
     private enum PaceKeys: String, CodingKey {
@@ -140,7 +207,8 @@ nonisolated extension WanderConfig {
                   pace: pace,
                   breaks: try c.decodeIfPresent(Breaks.self, forKey: .breaks),
                   glanceFacings: try c.decodeIfPresent([Facing].self, forKey: .glanceFacings) ?? [],
-                  activities: try c.decode([Activity].self, forKey: .activities))
+                  activities: try c.decode([Activity].self, forKey: .activities),
+                  sleepiness: try c.decodeIfPresent(SleepinessConfig.self, forKey: .sleepiness))
     }
 }
 

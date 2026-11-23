@@ -92,7 +92,7 @@ struct WanderTests {
             }
         }
         #expect(problem { _ in } == nil)
-        #expect(problem { $0.version = 3 } == .unsupportedVersion(3))
+        #expect(problem { $0.version = 4 } == .unsupportedVersion(4))
         #expect(problem { $0.pace = .init(slow: 0, fast: 0) } == .invalid("pace"))
         #expect(problem { $0.breaks = .init(everyTiles: 0...2, seconds: 1...1) } == .invalid("breaks"))
         #expect(problem { $0.activities[0].weight = -1 } == .invalid("z.weight"))

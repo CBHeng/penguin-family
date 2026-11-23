@@ -1,5 +1,5 @@
 // 箱庭的兩種畫法（ADR 0007）：
-// - 貼圖：角色的部件，一張圖貼到畫面上的四個角（可以轉動、縮放、翻轉），線性取樣加 mipmap。
+// - 貼圖：角色的部件與共用特效，一張圖貼到畫面上的四個角（可以轉動、縮放、翻轉），線性取樣加 mipmap。
 // - 多邊形：箱庭的牆、地板、家具，頂點自帶顏色；邊緣靠多重取樣抗鋸齒。
 #include <metal_stdlib>
 using namespace metal;
@@ -27,11 +27,12 @@ vertex QuadOut quadVertex(uint vid [[vertex_id]], constant QuadUniforms &quad [[
     return out;
 }
 
-/// 圖的顏色已經乘過透明度。
+/// 圖的顏色已經乘過透明度；`alpha` 是整張圖再乘上的透明度（特效淡入淡出，ADR 0010；角色是 1）。
 fragment float4 quadFragment(QuadOut in [[stage_in]],
                              texture2d<float> image [[texture(0)]],
-                             sampler imageSampler [[sampler(0)]]) {
-    return image.sample(imageSampler, in.uv);
+                             sampler imageSampler [[sampler(0)]],
+                             constant float &alpha [[buffer(0)]]) {
+    return image.sample(imageSampler, in.uv) * alpha;
 }
 
 /// 和 Swift 的 `PolygonVertex` 對應：位置是箱庭的單位，顏色已經乘過透明度。
