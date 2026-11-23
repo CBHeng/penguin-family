@@ -7,7 +7,7 @@
 - **保持同步**：`CodeMapTests` 會檢查每個 `.swift` 檔都列在這份文件裡、這裡列的檔案都存在；新增、刪除或改名檔案時，測試失敗就是提醒你回來更新。內容寫得對不對，還是靠人（作者 2026-11-16 決定）。
 - 圖用 [Mermaid](https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/creating-diagrams)：在 GitHub 上會畫成圖；在終端機裡看到的是原始文字。
 
-最後更新：2026-11-23（v0.0.10：坐著打瞌睡與睏意；片段可以換部件、動作可以循環、共用特效，ADR 0010 提案中）。
+最後更新：2026-11-23（v0.0.10：坐著打瞌睡與睏意；片段可以換部件、動作可以循環、共用特效，ADR 0010）。
 
 ## 一句話看懂
 
