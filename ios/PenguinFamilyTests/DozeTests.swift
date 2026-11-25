@@ -61,7 +61,8 @@ struct DozeTests {
     }
 
     @Test func dozeIntentsPlayTheirOwnMotions() {
-        #expect(CharacterBehavior.Intent.playing.compactMap(\.motionName) == ["hello", "sitDown", "doze", "standUp", "wakeStartled"])
+        #expect(CharacterBehavior.Intent.playing.compactMap(\.motionName) == ["hello", "sitDown", "doze", "standUp", "wakeStartled",
+                                                                                "climbIn", "sleep", "wakeTapped", "wakeRested"])
     }
 
     // MARK: - 閒晃照睏意決定

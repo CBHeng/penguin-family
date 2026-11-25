@@ -38,7 +38,7 @@ struct VectorMemoryBudgetTests {
         for (i, (member, look)) in zip(Self.family, StandIn.resolve(Self.family)).enumerated() {
             let bytes = VectorRasterizer.textureBytes(look.vector, pixelsPerUnit: pixelsPerUnit)
             total += bytes
-            each.append("第 \(i + 1) 隻\(member.character == nil ? "（替身）" : "") \(bytes / 1024) KB（\(look.vector.facings.count) 個畫好的方向）")
+            each.append("第 \(i + 1) 隻\(member.character == nil ? "（替身）" : "") \(bytes / 1024) KB（\(look.vector.facings.count) 個畫好的方向、\(look.vector.postures.count) 個姿勢）")
         }
         #expect(total <= Self.budget,
                 "一家的向量貼圖在 3 倍螢幕約 \(total / 1024) KB，超過 \(Self.budget / 1024) KB：\(each.joined(separator: "、"))")

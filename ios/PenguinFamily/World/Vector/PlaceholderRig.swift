@@ -30,7 +30,7 @@ extension VectorRig {
     /// 替身（作者 2026-11-19 決定；ADR 0009 只借同物種的）：名單上有一隻沒有角色包時，借同物種那隻的形狀，
     /// 整隻塗成和灰色剪影一樣的灰。
     ///
-    /// 方向、部件、轉軸都不變，所以那隻的動作片段可以直接用；每個部件只剩一層，用外形填滿灰色，
+    /// 方向、姿勢、部件、轉軸都不變，所以那隻的動作片段可以直接用；每個部件只剩一層，用外形填滿灰色，
     /// 只看得到輪廓與外框（手腳在輪廓邊緣動），不會被當成那隻的分身。貼圖另外畫一份，記憶體算進預算。
     nonisolated func graySilhouette() -> VectorRig {
         func gray(_ facing: Facing) -> Facing {
@@ -38,11 +38,11 @@ extension VectorRig {
                    parts: facing.parts.mapValues { part in
                        Part(pivot: part.pivot, silhouette: part.silhouette,
                             layers: [Layer(fill: Self.placeholderFill, stroke: nil, width: nil,
-                                           shapes: part.silhouette, clip: nil)])
-                   })
+                                           shapes: part.silhouette, clip: nil)], hidden: part.hidden)
+                   }, shadow: facing.shadow, touch: facing.touch)
         }
         return VectorRig(format: format, outline: Outline(color: Self.placeholderOutline, width: outline.width),
-                         facings: facings.mapValues(gray), mirrors: mirrors)
+                         facings: facings.mapValues(gray), mirrors: mirrors, postures: postures.mapValues(gray))
     }
 }
 

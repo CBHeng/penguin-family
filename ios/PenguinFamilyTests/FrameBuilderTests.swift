@@ -140,8 +140,10 @@ struct FrameBuilderTests {
                 case .polygons(let key):
                     #expect(builder.polygons()[key] != nil, "\(key) 畫不出來")
                 case .character(let id, let look, let parts):
-                    let facing = try #require(builder.rigs()[id]?.facings[look], "\(id.rawValue) 沒有 \(look) 的圖")
+                    let facing = try #require(builder.rigs()[id]?.drawn(look), "\(id.rawValue) 沒有 \(look) 的圖")
                     #expect(parts.allSatisfy { facing.parts[$0.name] != nil })
+                case .shadow(let id, let look, _, _):
+                    #expect(builder.rigs()[id]?.drawn(look)?.shadow != nil, "\(id.rawValue) 的 \(look) 沒有影子")
                 case .effect(let name, _, _):
                     #expect(builder.effectLibrary().effects[name] != nil, "沒有特效 \(name) 的形狀")
                 }

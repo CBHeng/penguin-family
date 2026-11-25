@@ -1,6 +1,6 @@
 import Foundation
 
-/// 向量角色包（`vector.json`，ADR 0007）：每個方向的部件形狀、轉軸、畫的順序與外框顏色。
+/// 向量角色包（`vector.json`，ADR 0007）：每個方向（與姿勢，ADR 0011）的部件形狀、轉軸、畫的順序與外框顏色。
 ///
 /// 由私有素材 repo 的 `vector/export.js` 產生。形狀只有兩種：橢圓，和只有直線、三次曲線的路徑
 /// （弧線、二次曲線在匯出時就轉好了），App 這邊不用解析 SVG。
@@ -8,7 +8,7 @@ import Foundation
 ///
 /// 不分物種（ADR 0009）：部件叫什麼、有幾個由角色包決定，這裡不要求特定部件。
 /// 部件怎麼動是動作資料（`CharacterMotions`）的事；讀角色包時再檢查片段用到的部件這裡都有。
-/// 匯出的檔可能還帶著私有素材 repo 的算式用的欄位（例如 `neckY`、`walk`），App 不讀。
+/// 匯出的檔可能還帶著私有素材 repo 的算式用的欄位（例如 `neckY`、`walk`、`anchors`），App 不讀。
 nonisolated struct VectorRig: Decodable, Sendable {
     static let supportedFormat = 1
 
@@ -18,8 +18,10 @@ nonisolated struct VectorRig: Decodable, Sendable {
     let facings: [String: Facing]
     /// 翻轉的方向：右邊由左邊左右翻轉，不另外存形狀，貼圖也共用。
     let mirrors: [String: Mirror]
+    /// 姿勢（ADR 0011）：方向之外另外畫的造型，例如躺在床上（`lieBack`）。沒有方向、不翻轉；動作的片段指定用哪個。
+    let postures: [String: Facing]
 
-    private enum CodingKeys: String, CodingKey { case format, outline, facings, mirrors }
+    private enum CodingKeys: String, CodingKey { case format, outline, facings, mirrors, postures }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -27,14 +29,17 @@ nonisolated struct VectorRig: Decodable, Sendable {
         outline = try c.decode(Outline.self, forKey: .outline)
         facings = try c.decode([String: Facing].self, forKey: .facings)
         mirrors = try c.decodeIfPresent([String: Mirror].self, forKey: .mirrors) ?? [:]
+        postures = try c.decodeIfPresent([String: Facing].self, forKey: .postures) ?? [:]
     }
 
     /// 由程式組出來的造型（例如借別隻的形狀塗灰，見 `graySilhouette()`）。
-    init(format: Int = supportedFormat, outline: Outline, facings: [String: Facing], mirrors: [String: Mirror]) {
+    init(format: Int = supportedFormat, outline: Outline, facings: [String: Facing], mirrors: [String: Mirror],
+         postures: [String: Facing] = [:]) {
         self.format = format
         self.outline = outline
         self.facings = facings
         self.mirrors = mirrors
+        self.postures = postures
     }
 
     struct Outline: Decodable, Sendable {
@@ -53,14 +58,31 @@ nonisolated struct VectorRig: Decodable, Sendable {
         let height: Double
     }
 
-    /// 一個畫好的方向。
+    /// 一個畫好的方向或姿勢。
     struct Facing: Decodable, Sendable {
         let canvas: Size
-        /// 腳底中心：放到箱庭上的那一點；翻轉的方向以這裡為軸。
+        /// 腳底中心：放到箱庭上的那一點；翻轉的方向以這裡為軸。姿勢是放在家具上的那一點（例如床位）。
         let feet: Point
         /// 由後往前畫的部件名稱。
         let drawOrder: [String]
         let parts: [String: Part]
+        /// 畫在角色底下的半透明影子（ADR 0011）；沒有是 nil。
+        var shadow: Shadow? = nil
+        /// 觸控範圍（ADR 0011）：畫布上的凸多邊形；nil 用整張畫布。兩隻躺在一起時畫布重疊很多，會點到錯的那隻。
+        var touch: [Point]? = nil
+    }
+
+    /// 半透明的影子：形狀合成一張再乘不透明度（重疊處不會變深），畫在外框之前，不跟著部件動。
+    struct Shadow: Decodable, Sendable {
+        let color: String
+        let opacity: Double
+        let shapes: [Shape]
+
+        /// 畫成貼圖用：只有一層顏色、不描外框的部件。
+        var part: Part {
+            Part(pivot: Point(x: 0, y: 0), silhouette: [],
+                 layers: [Layer(fill: color, stroke: nil, width: nil, shapes: shapes, clip: nil)])
+        }
     }
 
     /// 翻轉的方向：把 `of` 以腳底中心左右翻轉。部件先照 `shift` 挪（翻轉前的座標，例如帽子不跟著翻），
@@ -209,9 +231,12 @@ nonisolated struct VectorRig: Decodable, Sendable {
     /// 正面：一定要有。
     var front: Facing { facings["front"]! }
 
-    /// 某個方向（`Facing` 的名稱）怎麼畫；角色包沒有這個方向時是 nil。
+    /// 畫好的方向或姿勢；翻轉的方向與沒有的是 nil。
+    func drawn(_ name: String) -> Facing? { facings[name] ?? postures[name] }
+
+    /// 某個方向（`Facing` 的名稱）或姿勢怎麼畫；角色包沒有時是 nil。
     func look(_ name: String) -> Look? {
-        if let facing = facings[name] { return Look(source: name, drawOrder: facing.drawOrder, mirror: nil) }
+        if let facing = drawn(name) { return Look(source: name, drawOrder: facing.drawOrder, mirror: nil) }
         guard let mirror = mirrors[name] else { return nil }
         return Look(source: mirror.of, drawOrder: mirror.drawOrder, mirror: mirror)
     }
@@ -233,17 +258,13 @@ nonisolated struct VectorRig: Decodable, Sendable {
         guard RGBColor(hex: outline.color) != nil, outline.width > 0 else { throw VectorRigError.invalidColor(outline.color) }
         guard facings["front"] != nil else { throw VectorRigError.invalidDirection("front") }
         for (name, facing) in facings {
-            guard name == "front" || Self.obliqueNames.contains(name),
-                  !facing.drawOrder.isEmpty, facing.drawOrder.count == facing.parts.count,
-                  Set(facing.drawOrder) == Set(facing.parts.keys)
-            else { throw VectorRigError.invalidDirection(name) }
-            for (partName, part) in facing.parts {
-                do {
-                    try part.validate("\(name).\(partName)")
-                } catch VectorRigError.missingPart {
-                    throw VectorRigError.missingPart(partName)
-                }
-            }
+            guard name == "front" || Self.obliqueNames.contains(name) else { throw VectorRigError.invalidDirection(name) }
+            try validate(facing, name)
+        }
+        for (name, posture) in postures {
+            // 姿勢不能和方向同名
+            guard name != "front", !Self.obliqueNames.contains(name) else { throw VectorRigError.invalidDirection(name) }
+            try validate(posture, name)
         }
         for (name, mirror) in mirrors {
             guard Self.obliqueNames.contains(name), facings[name] == nil, mirror.of != "front",
@@ -252,6 +273,27 @@ nonisolated struct VectorRig: Decodable, Sendable {
                   mirror.shift.keys.allSatisfy({ source.parts[$0] != nil })
             else { throw VectorRigError.invalidDirection(name) }
         }
+    }
+
+    /// 一個畫好的方向或姿勢：部件剛好列一次、每個部件畫得出來、影子與觸控範圍合理。
+    private func validate(_ facing: Facing, _ name: String) throws {
+        guard !facing.drawOrder.isEmpty, facing.drawOrder.count == facing.parts.count,
+              Set(facing.drawOrder) == Set(facing.parts.keys)
+        else { throw VectorRigError.invalidDirection(name) }
+        for (partName, part) in facing.parts {
+            do {
+                try part.validate("\(name).\(partName)")
+            } catch VectorRigError.missingPart {
+                throw VectorRigError.missingPart(partName)
+            }
+        }
+        if let shadow = facing.shadow {
+            guard RGBColor(hex: shadow.color) != nil else { throw VectorRigError.invalidColor(shadow.color) }
+            guard !shadow.shapes.isEmpty, shadow.opacity > 0, shadow.opacity <= 1 else {
+                throw VectorRigError.invalidDirection("\(name).shadow")
+            }
+        }
+        if let touch = facing.touch, touch.count < 3 { throw VectorRigError.invalidDirection("\(name).touch") }
     }
 }
 
@@ -293,7 +335,7 @@ extension VectorRig {
     /// 部件照姿勢以自己的轉軸動，姿勢沒列到的部件在原位（ADR 0009）。
     /// 翻轉的方向：用來源的部件與姿勢，部件先照 `shift` 挪，最後以腳底中心左右翻轉（同 `vector.js` 的 `facingTransforms`）。
     nonisolated func frame(_ pose: CharacterPose) -> (look: Look, transforms: [String: Affine2D])? {
-        guard let look = look(pose.facing.rawValue), let source = facings[look.source] else { return nil }
+        guard let look = look(pose.look), let source = drawn(look.source) else { return nil }
         var t: [String: Affine2D] = [:]
         for name in source.drawOrder {
             if let part = pose.parts[name], let pivot = source.parts[name]?.pivot {
@@ -314,7 +356,7 @@ extension VectorRig {
 
     /// 這一格要畫的部件，依畫的先後（ADR 0010）：片段說顯示或藏起來的照片段，其他照造型（`hidden` 的平常藏起來）。
     nonisolated func shownParts(_ look: Look, _ pose: CharacterPose) -> [String] {
-        let parts = facings[look.source]?.parts ?? [:]
+        let parts = drawn(look.source)?.parts ?? [:]
         return look.drawOrder.filter { name in pose.shown[name] ?? !(parts[name]?.hidden ?? false) }
     }
 

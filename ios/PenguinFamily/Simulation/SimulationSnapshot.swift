@@ -9,6 +9,8 @@ nonisolated struct SimulationSnapshot: Equatable, Sendable {
         case still
         /// 播意圖的動作（例如哈囉），從模擬時間 `since` 開始；片段看那一隻的 `CharacterMotions`。
         case motion(CharacterBehavior.Intent, since: Double)
+        /// 播到一半停住：分段的動作（ADR 0011）停在第 `at` 秒，例如在床邊等落地的格子空出來。
+        case paused(CharacterBehavior.Intent, at: Double)
         /// 移動，已經走了 `elapsed` 秒：步態的片段照這個播（等別隻讓路的時間不算）。
         case moving(CharacterBehavior.Pace, elapsed: Double)
     }
@@ -20,6 +22,10 @@ nonisolated struct SimulationSnapshot: Equatable, Sendable {
         let position: TilePosition
         let facing: Facing
         let activity: Activity
+        /// 離地多高（單位）；在地板上是 0。
+        var height = 0.0
+        /// 在第幾件家具上（ADR 0011，例如躺在床上、正在上下床）；在地板上是 nil。
+        var support: Int? = nil
     }
 
     /// 第幾個節拍結束時的樣子。

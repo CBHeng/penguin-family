@@ -37,6 +37,22 @@ nonisolated enum FurnitureKind: String, Sendable, CaseIterable, Decodable {
     case storageBox
 }
 
+/// 家具上的一個位置，例如床位（ADR 0011）。座標是箱庭的格子，高度是家具的高度。
+nonisolated struct FurnitureSlot: Equatable, Sendable {
+    /// 躺的那一點。
+    let position: TilePosition
+    /// 家具的邊，跳上來、跳下去的那一點。
+    let edge: TilePosition
+    /// 上來前站的、下來後落地的格子，依偏好排；第一個被佔住就用下一個。
+    let entries: [Tile]
+}
+
+/// 箱庭裡的一個家具位置：第幾件家具的第幾個。
+nonisolated struct FurnitureSlotID: Hashable, Sendable {
+    let furniture: Int
+    let slot: Int
+}
+
 /// 地上的一件家具。A1 是固定擺好的，之後的家具系統才會移動（見遊戲設計的家具分階段）。
 nonisolated struct Furniture: Equatable, Sendable {
     let kind: FurnitureKind
@@ -44,6 +60,8 @@ nonisolated struct Furniture: Equatable, Sendable {
     let footprint: TileRect
     /// 高度（單位）。
     let height: Int
+    /// 可以躺的位置；先到先選（作者 2026-11-24 決定）。
+    var slots: [FurnitureSlot] = []
 }
 
 /// 兩面後牆：左牆沿著 j 軸（i = 0），右牆沿著 i 軸（j = 0）。
@@ -79,12 +97,18 @@ nonisolated struct RoomLayout: Equatable, Sendable {
     var floor: TileRect { TileRect(x: 0, y: 0, width: widthTiles, height: depthTiles) }
 
     /// A1 的屋內：12×12 格（作者 2026-11-16 決定），四件固定家具。位置與大小是占位，美術定案時再調。
+    /// 床是 3×3，兩個床位（作者 2026-11-24 看過原型後定案，ADR 0011）：頭靠左牆，從床尾上下床。
     static let indoor = RoomLayout(
         widthTiles: 12,
         depthTiles: 12,
         wallHeight: 64,
         furniture: [
-            Furniture(kind: .bed, footprint: TileRect(x: 0, y: 1, width: 3, height: 2), height: 10),
+            Furniture(kind: .bed, footprint: TileRect(x: 0, y: 1, width: 3, height: 3), height: 10, slots: [
+                FurnitureSlot(position: TilePosition(i: 1.85, j: 2), edge: TilePosition(i: 2.6, j: 2),
+                              entries: [Tile(i: 3, j: 1), Tile(i: 3, j: 2)]),
+                FurnitureSlot(position: TilePosition(i: 1.85, j: 3.45), edge: TilePosition(i: 2.6, j: 3.45),
+                              entries: [Tile(i: 3, j: 3), Tile(i: 3, j: 2)]),
+            ]),
             Furniture(kind: .sofa, footprint: TileRect(x: 7, y: 6, width: 1, height: 3), height: 12),
             Furniture(kind: .storageBox, footprint: TileRect(x: 0, y: 10, width: 1, height: 1), height: 14),
         ],
@@ -93,6 +117,13 @@ nonisolated struct RoomLayout: Equatable, Sendable {
         ],
         // 前兩隻並排，第二隻在第一隻的畫面右邊
         starts: [Tile(i: 4, j: 4), Tile(i: 5, j: 3)])
+
+    /// 每件家具的每個位置，依家具與位置的順序。
+    var slotIDs: [FurnitureSlotID] {
+        furniture.indices.flatMap { f in furniture[f].slots.indices.map { FurnitureSlotID(furniture: f, slot: $0) } }
+    }
+
+    func slot(_ id: FurnitureSlotID) -> FurnitureSlot { furniture[id.furniture].slots[id.slot] }
 
     /// 擺放規則有問題的地方；沒有問題時是空的。
     func problems() -> [String] {
@@ -103,6 +134,18 @@ nonisolated struct RoomLayout: Equatable, Sendable {
         for (i, a) in furniture.enumerated() {
             for b in furniture[(i + 1)...] where a.footprint.intersects(b.footprint) {
                 found.append("\(a.kind.rawValue) 和 \(b.kind.rawValue) 重疊")
+            }
+        }
+        for item in furniture {
+            let r = item.footprint
+            for (i, slot) in item.slots.enumerated() {
+                let inside = [slot.position, slot.edge].allSatisfy {
+                    $0.i > Double(r.x) && $0.i < Double(r.maxX) && $0.j > Double(r.y) && $0.j < Double(r.maxY)
+                }
+                if !inside { found.append("\(item.kind.rawValue) 的第 \(i + 1) 個位置不在家具上") }
+                if slot.entries.isEmpty || !slot.entries.allSatisfy(isWalkable) {
+                    found.append("\(item.kind.rawValue) 的第 \(i + 1) 個位置上不去")
+                }
             }
         }
         for tile in starts where !isWalkable(tile) {

@@ -7,7 +7,7 @@
 - **保持同步**：`CodeMapTests` 會檢查每個 `.swift` 檔都列在這份文件裡、這裡列的檔案都存在；新增、刪除或改名檔案時，測試失敗就是提醒你回來更新。內容寫得對不對，還是靠人（作者 2026-11-16 決定）。
 - 圖用 [Mermaid](https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/creating-diagrams)：在 GitHub 上會畫成圖；在終端機裡看到的是原始文字。
 
-最後更新：2026-11-23（v0.0.10：坐著打瞌睡與睏意；片段可以換部件、動作可以循環、共用特效，ADR 0010）。
+最後更新：2026-11-25（v0.0.11：去床上仰睡；姿勢、分段帶位移的動作、床位，ADR 0011）。
 
 ## 一句話看懂
 
@@ -47,15 +47,15 @@ App 分四塊，資料只往一個方向流（ADR 0008）：
 
 | 檔案 | 職責 |
 |---|---|
-| [CharacterMotions.swift](../ios/PenguinFamily/World/Motion/CharacterMotions.swift) | 一隻角色的動作資料（角色包的 `motion.json` 第 3 版，私有素材 repo 從算式取樣匯出）：動作（長度或循環長度、轉向哪裡、每個方向一段片段；寫了 `cycle` 的一直循環，例如打瞌睡）與慢、快兩種步態（一秒走幾格、循環長度、每個斜向一段片段）；讀檔（第 2 版也讀得懂）、檢查、片段對不對得上造型；沒有動作資料時的 `still`。 |
-| [MotionClip.swift](../ios/PenguinFamily/World/Motion/MotionClip.swift) | 播放器：片段（每個部件一條關鍵影格的軌道；ADR 0010 加上部件什麼時候顯示、共用特效的軌道與透明度）在第幾秒的樣子，一次性的停在兩端、循環的接回開頭，關鍵影格之間直線內插，顯示不內插；部件的樣子 `PartPose`（以轉軸縮放、旋轉，再位移）、特效的樣子 `EffectPose`，與一隻角色這一格的樣子 `CharacterPose`（部件、顯示或藏起來、看得到的特效）。 |
+| [CharacterMotions.swift](../ios/PenguinFamily/World/Motion/CharacterMotions.swift) | 一隻角色的動作資料（角色包的 `motion.json` 第 4 版，私有素材 repo 從算式取樣匯出）：動作（長度或循環長度、轉向哪裡、每個方向一段片段；寫了 `cycle` 的一直循環，例如打瞌睡；寫了 `look` 的用姿勢播，例如睡覺；寫了 `stages` 的分段播、可以帶位移，例如上床，ADR 0011）與慢、快兩種步態（一秒走幾格、循環長度、每個斜向一段片段）；讀檔（第 2、3 版也讀得懂）、檢查、片段對不對得上造型；沒有動作資料時的 `still`。 |
+| [MotionClip.swift](../ios/PenguinFamily/World/Motion/MotionClip.swift) | 播放器：片段（每個部件一條關鍵影格的軌道；ADR 0010 加上部件什麼時候顯示、共用特效的軌道與透明度）在第幾秒的樣子，一次性的停在兩端、循環的接回開頭，關鍵影格之間直線內插，顯示不內插；部件的樣子 `PartPose`（以轉軸縮放、旋轉，再位移）、特效的樣子 `EffectPose`，與一隻角色這一格的樣子 `CharacterPose`（用哪個方向或姿勢、部件、顯示或藏起來、看得到的特效）。 |
 
 **`World/Vector/`：角色的造型（ADR 0007）**
 
 | 檔案 | 職責 |
 |---|---|
-| [VectorRig.swift](../ios/PenguinFamily/World/Vector/VectorRig.swift) | `vector.json` 的資料格式與檢查（部件的形狀、轉軸、顏色層、外框；平常藏起來的部件、不描共用外框的部件（ADR 0010）；右邊翻轉左邊；不要求特定部件，不分物種）；`Affine2D` 矩陣；某一格的樣子 `CharacterPose` 換成每個部件的矩陣（翻轉的方向用來源的姿勢再翻）、這一格要畫哪些部件、特效放到畫布上的矩陣（翻轉的方向只翻位置）；身體中央在腳底上方多高（鏡頭用）。 |
-| [VectorRasterizer.swift](../ios/PenguinFamily/World/Vector/VectorRasterizer.swift) | 載入時用 Core Graphics 把每個畫好的方向的每個部件畫成兩張貼圖（外框、顏色；外形是空的部件只有顏色），共用特效也畫成一張，解析度照抱抱近景的倍率準備（螢幕倍率最多算到 2）；裁切每一組取聯集、組與組取交集；不用畫就能算出貼圖佔多少記憶體。 |
+| [VectorRig.swift](../ios/PenguinFamily/World/Vector/VectorRig.swift) | `vector.json` 的資料格式與檢查（部件的形狀、轉軸、顏色層、外框；平常藏起來的部件、不描共用外框的部件（ADR 0010）；右邊翻轉左邊；姿勢（方向之外的造型，例如仰睡）與它的影子、觸控範圍（ADR 0011）；不要求特定部件，不分物種）；`Affine2D` 矩陣；某一格的樣子 `CharacterPose` 換成每個部件的矩陣（翻轉的方向用來源的姿勢再翻）、這一格要畫哪些部件、特效放到畫布上的矩陣（翻轉的方向只翻位置）；身體中央在腳底上方多高（鏡頭用）。 |
+| [VectorRasterizer.swift](../ios/PenguinFamily/World/Vector/VectorRasterizer.swift) | 載入時用 Core Graphics 把每個畫好的方向與姿勢的每個部件畫成兩張貼圖（外框、顏色；外形是空的部件只有顏色），影子與共用特效也各畫成一張，解析度照抱抱近景的倍率準備（螢幕倍率最多算到 2）；裁切每一組取聯集、組與組取交集；不用畫就能算出貼圖佔多少記憶體。 |
 | [PlaceholderRig.swift](../ios/PenguinFamily/World/Vector/PlaceholderRig.swift) | 沒有角色包時的造型：替身（`graySilhouette()`，借同物種的形狀整隻塗灰）；同物種都沒有角色包時的灰色剪影（`VectorRig.placeholder`：只有正面，手藏在身體裡）與它的動作（`CharacterMotions.placeholder`：程式裡寫好的幾個關鍵影格，哈囉時手轉出來揮）。 |
 
 **`World/Room/`：箱庭怎麼畫**
@@ -63,7 +63,7 @@ App 分四塊，資料只往一個方向流（ADR 0008）：
 | 檔案 | 職責 |
 |---|---|
 | [RoomPath.swift](../ios/PenguinFamily/World/Room/RoomPath.swift) | 找路：哪些格子站得上去、沿格線一格一格走、繞過家具（需要時也避開別隻站的格子）；先挑最短、再挑轉彎最少，拆成一段段直線（每段對到斜向的一張圖）。閒晃用的：走到每一格要幾步、家具與窗戶旁邊站哪一格、某一格（別隻）四周站哪一格、面向哪裡（`RoomSpot`）。一開始站的格子：先用箱庭的起點，不夠時往外找最近的空格。 |
-| [RoomLayout.swift](../ios/PenguinFamily/World/Room/RoomLayout.swift) | 房間的邏輯：幾格大、家具佔哪些格與多高、牆上有什麼、一開始站的起點、擺放檢查。也包含 `IsoProjection`：格子座標換算成等角的位置（單位，不取整數）。 |
+| [RoomLayout.swift](../ios/PenguinFamily/World/Room/RoomLayout.swift) | 房間的邏輯：幾格大、家具佔哪些格、多高、有哪些床位（躺哪裡、床邊、上下床站哪一格，ADR 0011）、牆上有什麼、一開始站的起點、擺放檢查。也包含 `IsoProjection`：格子座標換算成等角的位置（單位，不取整數）。 |
 | [RoomRenderer.swift](../ios/PenguinFamily/World/Room/RoomRenderer.swift) | 把牆、地板、窗戶與家具的色塊盒子做成凸多邊形（家具外面一圈外框）；決定誰畫在前面。 |
 | [RoomCamera.swift](../ios/PenguinFamily/World/Room/RoomCamera.swift) | 鏡頭的數學：畫面中央對著哪一點、不超出房間、慢慢靠近目標。 |
 | [RoomZoom.swift](../ios/PenguinFamily/World/Room/RoomZoom.swift) | 縮放的數學：最大 3pt、最小房間左右塞滿畫面、放開後停在那個倍率、手指下那一點不動。 |
@@ -75,7 +75,7 @@ App 分四塊，資料只往一個方向流（ADR 0008）：
 | 檔案 | 職責 |
 |---|---|
 | [FrameBuilder.swift](../ios/PenguinFamily/World/Frame/FrameBuilder.swift) | 每次螢幕更新拿模擬最近兩份快照內插：每隻的位置、這一格的樣子（照牠的動作資料找這個方向的片段，播到走了幾秒或「畫的時間 − 開始的時間」；藏起來的部件不畫，看得到的特效緊接在那隻後面）、前後順序（角色在家具旁邊時依格子關係），交出繪製清單；鏡頭（對準第一隻的身體中央）、縮放、拖曳、捏合、閒置後鏡頭回到第一隻；點到哪一隻。不改世界狀態，不分物種。 |
-| [DrawList.swift](../ios/PenguinFamily/World/Frame/DrawList.swift) | 繪製清單：這一格由遠到近要畫的多邊形、角色部件（每個部件一個換到畫面 pt 的矩陣）與共用特效（矩陣與透明度）。可以比較，和上一格一樣就不重畫。 |
+| [DrawList.swift](../ios/PenguinFamily/World/Frame/DrawList.swift) | 繪製清單：這一格由遠到近要畫的多邊形、角色部件（每個部件一個換到畫面 pt 的矩陣）、角色底下的影子與共用特效（矩陣與透明度）。可以比較，和上一格一樣就不重畫。 |
 
 **`World/Render/`：用 Metal 畫出來**
 
@@ -89,10 +89,10 @@ App 分四塊，資料只往一個方向流（ADR 0008）：
 
 | 檔案 | 職責 |
 |---|---|
-| [CharacterBehavior.swift](../ios/PenguinFamily/Behavior/CharacterBehavior.swift) | 狀態機（不分物種）：待機 →（被點）→ 哈囉 →（播完）→ 待機；待機 →（要牠走去某一格，慢或快）→ 移動 →（走到）→ 待機；待機 →（要牠站幾秒）→ 站著 →（站滿）→ 待機，站著時被點就哈囉；移動中被點當場停下哈囉，記下那段路，播完接著走；待機 →（要牠打瞌睡）→ 坐下 → 打瞌睡（循環）→（睏意降下來）→ 自己醒來 → 待機，坐下或打瞌睡時被點就驚醒揉眼睛。哈囉、自己醒來、驚醒時再點會被忽略。同樣的意圖連續要兩次也算兩次改變。只輸出意圖（與意圖要播的動作名稱），不管動作播多久、怎麼走過去。 |
+| [CharacterBehavior.swift](../ios/PenguinFamily/Behavior/CharacterBehavior.swift) | 狀態機（不分物種）：待機 →（被點）→ 哈囉 →（播完）→ 待機；待機 →（要牠走去某一格，慢或快）→ 移動 →（走到）→ 待機；待機 →（要牠站幾秒）→ 站著 →（站滿）→ 待機，站著時被點就哈囉；移動中被點當場停下哈囉，記下那段路，播完接著走；待機 →（要牠打瞌睡）→ 坐下 → 打瞌睡（循環）→（睏意降下來）→ 自己醒來 → 待機，坐下或打瞌睡時被點就驚醒揉眼睛；待機 →（在床邊，要牠上床）→ 上床 → 睡覺（循環）→（睡飽）→ 伸懶腰下床 → 待機，睡覺時被點就揉眼睛下床（ADR 0011）。哈囉、自己醒來、驚醒、上床、下床時再點會被忽略。同樣的意圖連續要兩次也算兩次改變。只輸出意圖（與意圖要播的動作名稱），不管動作播多久、怎麼走過去。 |
 | [Sleepiness.swift](../ios/PenguinFamily/Behavior/Sleepiness.swift) | 一隻角色的睏意（0～100）：某個時間點是多少、每秒變多少，要用時再算現在的值；改速度、一下子加、還要幾秒降到某個值。 |
-| [WanderConfig.swift](../ios/PenguinFamily/Behavior/WanderConfig.swift) | 閒晃的資料格式與檢查（每種活動的權重、冷卻、待多久；慢與快的比例；走幾步停一下；東張西望看哪些方向；第 3 版的睏意：開始的範圍、每分鐘增加多少、打瞌睡的門檻、機率（越睏越高）、下降速度、醒來的值與冷卻），讀 App 裡的預設 `wander.json`（每隻自己的在角色包裡）。第 1、2 版也讀得懂。 |
-| [WanderRoutine.swift](../ios/PenguinFamily/Behavior/WanderRoutine.swift) | 閒晃：依權重挑活動、冷卻中的先不挑，拆成「走去某一格」「站著幾秒」一步步交給狀態機（走到家具旁邊面向它、隨便走走、發呆、東張西望、走去黏著另一隻，路長時走幾步停一下）；別隻的格子不當目的地；挑新的活動前，睏意夠高、冷卻好了就照機率改成打瞌睡。亂數、時間、別隻在哪與睏意由外面給。 |
+| [WanderConfig.swift](../ios/PenguinFamily/Behavior/WanderConfig.swift) | 閒晃的資料格式與檢查（每種活動的權重、冷卻、待多久；慢與快的比例；走幾步停一下；東張西望看哪些方向；第 3 版的睏意：開始的範圍、每分鐘增加多少、打瞌睡的門檻、機率（越睏越高）、下降速度、醒來的值與冷卻；第 4 版加上睡覺的同一組數字），讀 App 裡的預設 `wander.json`（每隻自己的在角色包裡）。第 1～3 版也讀得懂。 |
+| [WanderRoutine.swift](../ios/PenguinFamily/Behavior/WanderRoutine.swift) | 閒晃：依權重挑活動、冷卻中的先不挑，拆成「走去某一格」「站著幾秒」一步步交給狀態機（走到家具旁邊面向它、隨便走走、發呆、東張西望、走去黏著另一隻，路長時走幾步停一下）；別隻的格子不當目的地；挑新的活動前，先看要不要去床上睡（走到最近的空床位旁邊再上床，被佔走就改去另一個），再看要不要打瞌睡：睏意夠高、冷卻好了就照機率。亂數、時間、別隻在哪與睏意由外面給。 |
 
 ### Simulation：世界怎麼變化（ADR 0008）
 
@@ -100,8 +100,8 @@ App 分四塊，資料只往一個方向流（ADR 0008）：
 
 | 檔案 | 職責 |
 |---|---|
-| [Simulation.swift](../ios/PenguinFamily/Simulation/Simulation.swift) | 唯一的世界狀態：台上每一隻的位置、面向、狀態機、閒晃、睏意、移動與讓路。動作多長、轉向哪裡、走多快看每隻的動作資料（沒有那個動作時馬上算播完；循環的動作不會播完）。睏意照在做什麼增減，打瞌睡時算好什麼時候醒（等打瞌睡播完一個循環）。固定節拍每秒 30 次；事件排進佇列、節拍開頭依序處理；回報播完、走到並交給狀態機，回到待機就問閒晃；交出快照與輸出事件；沒東西在動時可以直接跳過節拍。 |
-| [SimulationSnapshot.swift](../ios/PenguinFamily/Simulation/SimulationSnapshot.swift) | 每個節拍交出的快照：台上每一隻在哪、面向哪、在做什麼（站著、播動作從什麼時候開始、移動走了幾秒），還要不要跑、何時醒來。不含畫面的東西。 |
+| [Simulation.swift](../ios/PenguinFamily/Simulation/Simulation.swift) | 唯一的世界狀態：台上每一隻的位置、面向、狀態機、閒晃、睏意、移動與讓路。動作多長、轉向哪裡、走多快看每隻的動作資料（沒有那個動作時馬上算播完；循環的動作不會播完）。睏意照在做什麼增減，打瞌睡、睡覺時算好什麼時候醒（等那個動作播完一個循環）。床位先到先選；上下床照分段的位移算位置與離地高度，落地的格子被佔住就停在床邊等（ADR 0011）。固定節拍每秒 30 次；事件排進佇列、節拍開頭依序處理；回報播完、走到並交給狀態機，回到待機就問閒晃；交出快照與輸出事件；沒東西在動時可以直接跳過節拍。 |
+| [SimulationSnapshot.swift](../ios/PenguinFamily/Simulation/SimulationSnapshot.swift) | 每個節拍交出的快照：台上每一隻在哪、面向哪、在做什麼（站著、播動作從什麼時候開始、停在動作的第幾秒、移動走了幾秒）、離地多高、在哪件家具上，還要不要跑、何時醒來。不含畫面的東西。 |
 | [SimulationRunner.swift](../ios/PenguinFamily/Simulation/SimulationRunner.swift) | 驅動模擬：開一條執行緒照真實時間跑節拍；沒東西在動時跳過、睡到排定的時間或有事件進來，落後太多時丟掉時間；用 `Mutex` 交接事件與最近兩份快照，輸出事件依序轉回主執行緒、樣子變了叫醒遊戲迴圈；畫的時間晚一個節拍。驗收用的啟動參數讓每個節拍故意變慢。 |
 | [SeededRandom.swift](../ios/PenguinFamily/Simulation/SeededRandom.swift) | 固定種子的亂數（SplitMix64），讓模擬的結果固定。 |
 
@@ -122,9 +122,10 @@ App 分四塊，資料只往一個方向流（ADR 0008）：
 
 | 檔案 | 測什麼 |
 |---|---|
-| [VectorPackParityTests.swift](../ios/PenguinFamilyTests/VectorPackParityTests.swift) | 拿真實角色包比對：App 照那隻自己的 `motion.json` 播（和畫面準備相同的找法），哈囉、斜向四個方向的慢與快、坐下、打瞌睡、自己醒來、驚醒揉眼睛，每個關鍵影格上每個部件的矩陣、要畫哪些部件、每個特效的矩陣與透明度和 `vector.js` 的算式相同，兩格中間不超過容許的差；沒有角色包時自動跳過。 |
+| [VectorPackParityTests.swift](../ios/PenguinFamilyTests/VectorPackParityTests.swift) | 拿真實角色包比對：App 照那隻自己的 `motion.json` 播（和畫面準備相同的找法），哈囉、斜向四個方向的慢與快、坐下、打瞌睡、自己醒來、驚醒揉眼睛、上床、睡覺、被點醒、睡飽，每個關鍵影格上每個部件的矩陣、要畫哪些部件、每個特效的矩陣與透明度和 `vector.js` 的算式相同，兩格中間不超過容許的差；沒有角色包時自動跳過。 |
 | [CharacterDisplayTests.swift](../ios/PenguinFamilyTests/CharacterDisplayTests.swift) | 每隻帶自己的動作與閒晃（沒帶、壞掉或對不上造型時是 nil）、顏色、找角色包、名單（幾隻、順序、物種；第 1 版；名單壞掉時用預設的一家）、灰色剪影只有正面。 |
 | [DozeTests.swift](../ios/PenguinFamilyTests/DozeTests.swift) | 打瞌睡：睏意的增減與上下限、狀態機（坐下、打瞌睡、自己醒來、被點驚醒）、閒晃照睏意與機率決定（越睏機率越高）、醒來後的冷卻、睏意資料的檢查；模擬裡從坐下到醒來、等循環結束才醒（醒來時略低於 `wakeBelow`）、只有打瞌睡的循環在降、被點驚醒、走路時睏得快、沒有打瞌睡的動作不打瞌睡、除錯的加睏意。 |
+| [SleepTests.swift](../ios/PenguinFamilyTests/SleepTests.swift) | 去床上睡（ADR 0011）：狀態機（上床、睡覺、被點醒、睡飽，上下床途中被點不理）、閒晃照睏意決定（90 有 50%、100 一定去）、走到最近的空床位、沒有床位時打瞌睡；箱庭床位的檢查；分段的動作與位移的讀檔與檢查、每段用自己的造型；姿勢的造型（影子、觸控範圍、替身、貼圖用量）；模擬裡上床躺進床位、睡飽等循環結束、只醒被點的那隻、先到先選、床滿了、走去床邊被點、落地的格子被佔住就等、沒有睡覺的動作不去睡；畫面準備裡畫在床前面、床尾的畫在前面、影子先畫、離地高度內插、停住再接著播、用觸控範圍點；拿真實角色包從上床跑到繪製清單（沒有時跳過）。 |
 | [EffectLibraryTests.swift](../ios/PenguinFamilyTests/EffectLibraryTests.swift) | 共用特效：App 裡的 `effects.json` 有打瞌睡用到的特效、每個都畫得出來；壞掉的資料擋下來。 |
 | [CharacterBehaviorTests.swift](../ios/PenguinFamilyTests/CharacterBehaviorTests.swift) | 狀態機的轉換（含移動中被點：哈囉完接著走）、同樣的意圖連續兩次。 |
 | [MotionClipTests.swift](../ios/PenguinFamilyTests/MotionClipTests.swift) | 播放器：關鍵影格上的值、之間內插（角度走近的那邊）、一次性停在兩端、循環接回開頭；`motion.json` 的讀檔與檢查、片段對不對得上造型；沒有動作資料時只會移動；灰色剪影的哈囉；第 3 版的循環動作、顯示時間表（不內插、循環接回）、特效軌道（內插、透明度 0 不畫）與壞掉的資料。 |
@@ -470,10 +471,10 @@ sequenceDiagram
 
 | [遊戲設計](product/game-design.md)的章節 | 程式 | 已做 | 還沒做 |
 |---|---|---|---|
-| 呈現（平面向量、等角） | `World/Vector`、`World/Motion`、`World/Room`、`World/Frame`、`World/Render` | 正面與哈囉、斜向四個方向、慢走與小跑、坐著打瞌睡與驚醒揉眼睛（換部件、共用特效）、屋內箱庭、縮放、Metal 繪圖、快照之間內插；動作是私有素材 repo 匯出的片段，App 只放播放器 | 其他動作（躺在床上睡、被拎著等） |
+| 呈現（平面向量、等角） | `World/Vector`、`World/Motion`、`World/Room`、`World/Frame`、`World/Render` | 正面與哈囉、斜向四個方向、慢走與小跑、坐著打瞌睡與驚醒揉眼睛（換部件、共用特效）、躺在床上仰睡（姿勢、影子、分段的動作）、屋內箱庭、縮放、Metal 繪圖、快照之間內插；動作是私有素材 repo 匯出的片段，App 只放播放器 | 其他動作（其他睡姿、被拎著等） |
 | 箱庭 | `World/Room`、`Simulation` | 四件色塊家具、鏡頭、找路（沿格線、繞過家具） | 庭院 |
 | 手勢 | `RoomView`、`RoomScene`、`FrameBuilder` | 點一下（站著、走路中都會哈囉）、拖曳空地、捏合 | 拎起來、抱抱 |
-| 行為與一天的節奏 | `Behavior`、`Simulation` | 待機、哈囉、閒晃（走向家具與窗邊、隨便走走、發呆、東張西望、走去黏著另一隻、走幾步停一下；權重與冷卻在每隻的 `wander.json`）、睏意與打瞌睡 | 睡覺、依權重反應、日夜 |
+| 行為與一天的節奏 | `Behavior`、`Simulation` | 待機、哈囉、閒晃（走向家具與窗邊、隨便走走、發呆、東張西望、走去黏著另一隻、走幾步停一下；權重與冷卻在每隻的 `wander.json`）、睏意、打瞌睡與去床上睡 | 依權重反應、日夜 |
 | 一家（名單）與多種動物 | `CharacterPackLibrary`、`StandIn`、`Simulation`、`FrameBuilder`、`GameView` | 名單決定幾隻、誰排第一、每隻是什麼動物；每隻各有身分、狀態機、動作與事件紀錄，都在台上閒晃；互相讓路；缺角色包時是借同物種形狀塗灰的替身；鏡頭優先看第一隻；假物種（測試用）從頭跑到畫面 | 第二隻照牠的樣子改造型、鯊魚的造型與動作、個性、看向對方、一起行動、鬥嘴 |
 | 不在時的痕跡 | `Memory` | 記下點擊 | 補算小事、回來看得到 |
 | 台詞 | `Soul`（未建立） | － | 全部 |

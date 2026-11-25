@@ -17,6 +17,7 @@
 | [0008](0008-simulation-frame-render-layers.md) | 狀態與繪圖分成模擬、畫面準備、繪圖三層；模擬在自己的執行緒、固定節拍每秒 30 次，畫面內插；狀態機不參與 render | accepted |
 | [0009](0009-characters-species-motion-data.md) | 角色不分物種：名單（幾隻、哪種動物）與動作都是資料，動作由私有素材 repo 匯出成關鍵影格，App 只放播放器（片段的格式由 0010 擴充） | accepted |
 | [0010](0010-motion-visibility-loops-effects.md) | 片段可以換部件（藏起來、換顯示哪一個）、動作可以循環；特效的形狀不分物種共用，怎麼動照樣是匯出的片段（擴充 0009） | accepted |
+| [0011](0011-postures-staged-motions-bed.md) | 躺姿是另一個造型（姿勢），動作可以分段帶位移，家具有床位、角色可以在家具上；半透明的影子、躺著的觸控範圍（擴充 0009、0010） | accepted |
 
 ## 已取代
 

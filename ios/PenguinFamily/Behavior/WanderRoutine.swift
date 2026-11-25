@@ -6,6 +6,8 @@
 /// 打瞌睡（作者 2026-11-20 決定）：挑新的活動前，睏意（外面給）超過 `sleepiness.doze.above` 時有一定的機率改成打瞌睡
 /// （越睏機率越高，見 `WanderConfig.SleepinessConfig.Doze.chance(at:)`）；
 /// 醒來後 `cooldown` 秒內不再打瞌睡。
+/// 去床上睡（ADR 0011）：先看要不要睡覺（`sleepiness.sleep`），要的話挑離牠近的空床位（外面給），走到床邊再上床；
+/// 走到了床位卻被別隻先佔走，改去另一個空的（`retryBed`）。沒有空的床位就不去，照樣看要不要打瞌睡。
 /// 不碰畫面；時間（秒）與亂數由外面給，所以可以用固定的亂數測。
 nonisolated struct WanderRoutine: Sendable {
     /// 交給狀態機的一步。
@@ -14,6 +16,8 @@ nonisolated struct WanderRoutine: Sendable {
         case stand(facing: Facing?, seconds: Double)
         /// 原地坐下打瞌睡，什麼時候醒由模擬照睏意決定。
         case doze
+        /// 上床睡：站在床邊了，用哪個床位由模擬決定，什麼時候醒由模擬照睏意決定。
+        case sleep
 
         /// 這一步要給狀態機的輸入。
         var request: CharacterBehavior.Input {
@@ -21,6 +25,7 @@ nonisolated struct WanderRoutine: Sendable {
             case .move(let tile, let pace): .moveRequested(to: tile, pace: pace)
             case .stand(let facing, let seconds): .standRequested(facing: facing, seconds: seconds)
             case .doze: .dozeRequested
+            case .sleep: .sleepRequested
             }
         }
     }
@@ -34,10 +39,11 @@ nonisolated struct WanderRoutine: Sendable {
     private(set) var plan: [Step] = []
     /// 每種活動上次開始的時間（秒），算冷卻用。
     private var lastStarted: [String: Double] = [:]
-    /// 正在做（或剛做完）的活動 id；還沒開始是 nil。打瞌睡是 `doze`。
+    /// 正在做（或剛做完）的活動 id；還沒開始是 nil。打瞌睡是 `doze`、去床上睡是 `sleep`。
     private(set) var activity: String?
-    /// 上次打瞌睡醒來的時間（秒），算打瞌睡的冷卻用。
+    /// 上次打瞌睡、睡覺醒來的時間（秒），算冷卻用。
     private var lastDozeEnded = -Double.infinity
+    private var lastSleepEnded = -Double.infinity
 
     init(config: WanderConfig, room: RoomLayout) {
         self.config = config
@@ -46,15 +52,27 @@ nonisolated struct WanderRoutine: Sendable {
 
     /// 下一步。這次活動的步驟用完時挑新的活動；`here` 是角色現在站的格子，`now` 是現在的時間（秒）。
     /// `others` 是台上別隻的格子（正在走的話是牠要去的那一格）。`sleepiness` 是現在的睏意；
-    /// nil 時不會打瞌睡（例如這隻沒有打瞌睡的動作）。
+    /// nil 時不會打瞌睡（例如這隻沒有打瞌睡的動作）。`freeSlots` 是空的床位；空的時不會去床上睡（例如這隻沒有睡覺的動作）。
     /// 什麼都做不了時是 nil（例如資料裡的活動在這個房間都走不到）。
     mutating func next(from here: Tile, others: Set<Tile> = [], now: Double, sleepiness: Double? = nil,
-                       using rng: inout some RandomNumberGenerator) -> Step? {
-        if plan.isEmpty, wantsToDoze(sleepiness, now: now, using: &rng) {
+                       freeSlots: [FurnitureSlotID] = [], using rng: inout some RandomNumberGenerator) -> Step? {
+        if plan.isEmpty, !freeSlots.isEmpty,
+           wants(config.sleepiness?.sleep, sleepiness, lastEnded: lastSleepEnded, now: now, using: &rng) {
+            plan = stepsToBed(from: here, others: others, freeSlots: freeSlots, using: &rng)
+            if !plan.isEmpty { activity = "sleep" }
+        }
+        if plan.isEmpty, wants(config.sleepiness?.doze, sleepiness, lastEnded: lastDozeEnded, now: now, using: &rng) {
             activity = "doze"
             return .doze
         }
         if plan.isEmpty { plan = start(from: here, others: others, now: now, using: &rng) }
+        return plan.isEmpty ? nil : plan.removeFirst()
+    }
+
+    /// 要上床的那一步做不了（不在床邊，或床位被別隻先佔走）：改去另一個空的床位。沒有空的、走不到時放棄，是 nil。
+    mutating func retryBed(from here: Tile, others: Set<Tile>, freeSlots: [FurnitureSlotID],
+                           using rng: inout some RandomNumberGenerator) -> Step? {
+        plan = stepsToBed(from: here, others: others, freeSlots: freeSlots, using: &rng)
         return plan.isEmpty ? nil : plan.removeFirst()
     }
 
@@ -63,11 +81,28 @@ nonisolated struct WanderRoutine: Sendable {
         lastDozeEnded = now
     }
 
+    /// 睡覺醒來了（睡飽或被點醒）：從現在起算冷卻。
+    mutating func sleepEnded(at now: Double) {
+        lastSleepEnded = now
+    }
+
     /// 睏意夠高、冷卻好了，再擲一次機率。
-    private func wantsToDoze(_ sleepiness: Double?, now: Double, using rng: inout some RandomNumberGenerator) -> Bool {
-        guard let sleepiness, let doze = config.sleepiness?.doze, sleepiness >= doze.above,
-              now - lastDozeEnded >= doze.cooldown else { return false }
-        return Double.random(in: 0..<1, using: &rng) < doze.chance(at: sleepiness)
+    private func wants(_ rest: WanderConfig.SleepinessConfig.Rest?, _ sleepiness: Double?, lastEnded: Double, now: Double,
+                       using rng: inout some RandomNumberGenerator) -> Bool {
+        guard let rest, let sleepiness, sleepiness >= rest.above, now - lastEnded >= rest.cooldown else { return false }
+        return Double.random(in: 0..<1, using: &rng) < rest.chance(at: sleepiness)
+    }
+
+    /// 走到最近的空床位的床邊，再上床。每個床位用第一個走得到、沒被別隻佔住的格子；一樣近時隨機挑。
+    private func stepsToBed(from here: Tile, others: Set<Tile>, freeSlots: [FurnitureSlotID],
+                            using rng: inout some RandomNumberGenerator) -> [Step] {
+        let counts = room.stepCounts(from: here)
+        let entries = freeSlots.compactMap { id in
+            room.slot(id).entries.first { counts[$0] != nil && !others.contains($0) }
+        }
+        guard let nearest = entries.compactMap({ counts[$0] }).min(),
+              let entry = entries.filter({ counts[$0] == nearest }).randomElement(using: &rng) else { return [] }
+        return walk(from: here, to: entry, others: others, using: &rng) + [.sleep]
     }
 
     // MARK: - 挑活動

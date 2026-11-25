@@ -104,8 +104,8 @@ struct RoomPathTests {
 
     @Test func stepCountsMatchTheShortestPath() throws {
         let counts = Self.room.stepCounts(from: Tile(i: 6, j: 7))
-        // 屋內 144 格，床 6 格、沙發 3 格、箱子 1 格站不上去，其他都走得到
-        #expect(counts.count == 144 - 10)
+        // 屋內 144 格，床 9 格、沙發 3 格、箱子 1 格站不上去，其他都走得到
+        #expect(counts.count == 144 - 13)
         #expect(counts[Tile(i: 6, j: 7)] == 0)
         #expect(counts[Tile(i: 7, j: 7)] == nil)                                     // 沙發上
         for goal in [Tile(i: 8, j: 7), Tile(i: 0, j: 0), Tile(i: 11, j: 11), Tile(i: 1, j: 10)] {
@@ -126,9 +126,9 @@ struct RoomPathTests {
     }
 
     @Test func spotsSkipTilesOutsideTheFloor() {
-        // 床在 i = 0～2、j = 1～2，靠著左牆：左邊那一側在地板外面
+        // 床在 i = 0～2、j = 1～3，靠著左牆：左邊那一側在地板外面
         let spots = Self.room.spots(beside: .bed)
-        #expect(spots.count == 3 + 3 + 2)
+        #expect(spots.count == 3 + 3 + 3)
         #expect(spots.allSatisfy { Self.room.isWalkable($0.tile) })
         // 床和右牆之間那一排（j = 0）往左前看著床
         #expect(spots.filter { $0.tile.j == 0 }.allSatisfy { $0.facing == .frontLeft })
