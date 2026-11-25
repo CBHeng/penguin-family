@@ -41,9 +41,9 @@ nonisolated enum VectorRasterizer {
         var byteCount: Int { (outline?.byteCount ?? 0) + fill.byteCount }
     }
 
-    /// 某個方向的每個部件，依 `drawOrder`。什麼形狀都沒有的部件（例如替身裡塗灰後的眼睛）不畫。
+    /// 某個方向或姿勢的每個部件，依 `drawOrder`。什麼形狀都沒有的部件（例如替身裡塗灰後的眼睛）不畫。
     static func rasterize(_ rig: VectorRig, facing name: String, pixelsPerUnit: Double) -> [PartImages] {
-        guard let facing = rig.facings[name], let outlineColor = cgColor(rig.outline.color) else { return [] }
+        guard let facing = rig.drawn(name), let outlineColor = cgColor(rig.outline.color) else { return [] }
         return facing.drawOrder.compactMap { partName in
             guard let part = facing.parts[partName] else { return nil }
             return images(of: part, name: partName, outline: (outlineColor, rig.outline.width), pixelsPerUnit: pixelsPerUnit)
@@ -53,6 +53,12 @@ nonisolated enum VectorRasterizer {
     /// 共用特效的形狀（ADR 0010）：只有顏色一張，不描外框。什麼形狀都沒有時是 nil。
     static func rasterizeEffect(_ effect: VectorRig.Part, name: String, pixelsPerUnit: Double) -> PartImages? {
         images(of: effect, name: name, outline: nil, pixelsPerUnit: pixelsPerUnit)
+    }
+
+    /// 某個方向或姿勢的影子（ADR 0011）：只有顏色一張，不透明；畫的時候才乘不透明度。沒有影子是 nil。
+    static func rasterizeShadow(_ rig: VectorRig, facing name: String, pixelsPerUnit: Double) -> PartImages? {
+        guard let shadow = rig.drawn(name)?.shadow else { return nil }
+        return images(of: shadow.part, name: "shadow", outline: nil, pixelsPerUnit: pixelsPerUnit)
     }
 
     private static func images(of part: VectorRig.Part, name: String, outline: (color: CGColor, width: Double)?,
@@ -78,15 +84,17 @@ nonisolated enum VectorRasterizer {
         return PartImages(name: name, bounds: bounds, outline: outlineImage, fill: fill)
     }
 
-    /// 某個角色所有畫好的方向的部件貼圖共佔多少位元組：每個部件外框、顏色兩張（外形是空的只有顏色一張），
-    /// 加上 mipmap 約多 1/3。只用範圍算，不用真的畫；和 `rasterize` 畫出來的圖一樣大，繪圖層也照同樣的算法記錄用量。
+    /// 某個角色所有畫好的方向與姿勢的部件貼圖共佔多少位元組：每個部件外框、顏色兩張（外形是空的只有顏色一張），
+    /// 影子一張，加上 mipmap 約多 1/3。只用範圍算，不用真的畫；和 `rasterize` 畫出來的圖一樣大，繪圖層也照同樣的算法記錄用量。
     static func textureBytes(_ rig: VectorRig, pixelsPerUnit: Double) -> Int {
-        rig.facings.values.reduce(0) { total, facing in
-            facing.parts.values.reduce(total) { total, part in
-                guard part.hasShapes else { return total }
-                let size = pixelSize(bounds(of: part, outlineWidth: rig.outline.width), pixelsPerUnit)
-                return total + size.width * size.height * 4 * (part.silhouette.isEmpty ? 1 : 2) * 4 / 3
-            }
+        func bytes(_ part: VectorRig.Part, outlineWidth: Double) -> Int {
+            guard part.hasShapes else { return 0 }
+            let size = pixelSize(bounds(of: part, outlineWidth: outlineWidth), pixelsPerUnit)
+            return size.width * size.height * 4 * (part.silhouette.isEmpty ? 1 : 2) * 4 / 3
+        }
+        return (Array(rig.facings.values) + Array(rig.postures.values)).reduce(0) { total, facing in
+            facing.parts.values.reduce(total) { $0 + bytes($1, outlineWidth: rig.outline.width) }
+                + (facing.shadow.map { bytes($0.part, outlineWidth: 0) } ?? 0)
         }
     }
 

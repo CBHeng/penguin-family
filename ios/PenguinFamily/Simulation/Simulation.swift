@@ -19,7 +19,11 @@ import Foundation
 ///
 /// 睏意（作者 2026-11-20 決定）：每隻的睏意在這裡（`Sleepiness`，數字在牠的 `wander.json`）。醒著時照在做什麼增加，
 /// 打瞌睡時下降；閒晃挑下一件事時照睏意決定要不要打瞌睡。打瞌睡時算好睏意什麼時候降到 `wakeBelow`，
-/// 再等打瞌睡的動作播到一個循環結束（頭剛抬起來）才叫牠自己醒來，畫面才不會跳。
+/// 再等打瞌睡的動作播到一個循環結束（頭剛抬起來）才叫牠自己醒來，畫面才不會跳。睡覺也一樣。
+///
+/// 去床上睡（ADR 0011）：閒晃要牠走到床邊，到了才選床位（先到先選，作者 2026-11-24 決定），被別隻先佔走就改去另一個。
+/// 上床、下床是分段的動作，每段的位移（`CharacterMotions.Travel`）由這裡照床位算位置與離地高度。從開始上床到下床落地都佔住那個床位；
+/// 下床時落地的格子都被佔住就停在床邊等。
 nonisolated struct Simulation: Sendable {
     /// 每秒幾個節拍（作者 2026-11-20 決定，ADR 0008）。
     static let ticksPerSecond = 30
@@ -43,7 +47,7 @@ nonisolated struct Simulation: Sendable {
         case enter(CharacterID, at: TilePosition)
         /// 下台：正在做的事直接停掉，不回報。
         case leave(CharacterID)
-        /// 把台上的一隻放到某一點（之後的「拎起來」也用它）。正在走或停在半路時不做事。
+        /// 把台上的一隻放到某一點（之後的「拎起來」也用它）。正在走、停在半路或在床上時不做事。
         case place(CharacterID, at: TilePosition)
         /// 主人點了這一隻。`at` 是點的當下，由外面取，只用來記錄。
         case ownerTapped(CharacterID, at: Date)
@@ -89,8 +93,23 @@ nonisolated struct Simulation: Sendable {
         var midway: Midway?
         /// 睏意；閒晃的資料沒有 `sleepiness` 時是 nil（不會打瞌睡）。
         var sleepiness: Sleepiness?
-        /// 打瞌睡時，什麼時候自己醒來（模擬的秒）；沒在打瞌睡是 nil。
-        var dozeUntil: Double?
+        /// 打瞌睡或睡覺時，什麼時候自己醒來（模擬的秒）；醒著是 nil。
+        var restUntil: Double?
+        /// 離地多高（單位）；在地板上是 0。
+        var height = 0.0
+        /// 在床上（含上床、下床）時的床位；不在床上是 nil。
+        var bed: BedPlace?
+    }
+
+    /// 一隻角色佔住的床位（ADR 0011）。
+    private struct BedPlace: Sendable {
+        let slot: FurnitureSlotID
+        /// 上床前站的格子，下床時是要落地的格子。
+        var floor: Tile
+        /// 現在佔住 `floor`：剛開始上床、正在跳下床。
+        var holdsFloor = true
+        /// 在床邊等落地的格子空出來：動作停在第幾秒；沒在等是 nil。
+        var pausedAt: Double?
     }
 
     /// 正在走的一段路。
@@ -142,8 +161,8 @@ nonisolated struct Simulation: Sendable {
     /// 有角色正在播動作或移動。站著不算：畫面不動，只要到時間（`wakeAt`）再跑。
     var isMoving: Bool { characters.contains { $0.playing != nil || $0.walking != nil } }
 
-    /// 沒有東西在動時，下次要醒來的模擬時間（最早站滿、或打瞌睡該醒的那隻）；沒有排定的事是 nil。
-    var wakeAt: Double? { characters.flatMap { [$0.standUntil, $0.dozeUntil].compactMap { $0 } }.min() }
+    /// 沒有東西在動時，下次要醒來的模擬時間（最早站滿、或打瞌睡、睡覺該醒的那隻）；沒有排定的事是 nil。
+    var wakeAt: Double? { characters.flatMap { [$0.standUntil, $0.restUntil].compactMap { $0 } }.min() }
 
     /// 台上某一隻的狀態機；不在台上是 nil。
     func behavior(of id: CharacterID) -> CharacterBehavior? {
@@ -159,7 +178,8 @@ nonisolated struct Simulation: Sendable {
     var snapshot: SimulationSnapshot {
         SimulationSnapshot(tick: tick, characters: characters.map { character in
             SimulationSnapshot.Character(id: character.id, position: character.position, facing: character.facing,
-                                         activity: Self.activity(of: character))
+                                         activity: Self.activity(of: character), height: character.height,
+                                         support: character.bed?.slot.furniture)
         }, isActive: isActive, wakeAt: wakeAt)
     }
 
@@ -189,7 +209,9 @@ nonisolated struct Simulation: Sendable {
         var finished: [CharacterID] = []
         var arrived: [(id: CharacterID, tile: Tile)] = []
         for index in characters.indices {
-            if let playing = characters[index].playing, now - playing.start >= playing.duration {
+            advanceStages(index, now: now)
+            if let playing = characters[index].playing, characters[index].bed?.pausedAt == nil,
+               now - playing.start >= playing.duration {
                 characters[index].playing = nil
                 finished.append(characters[index].id)
             }
@@ -197,8 +219,9 @@ nonisolated struct Simulation: Sendable {
                 characters[index].standUntil = nil
                 finished.append(characters[index].id)
             }
-            if let until = characters[index].dozeUntil, now >= until {
-                input(characters[index].id, .dozeEnded, now: now)
+            if let until = characters[index].restUntil, now >= until {
+                let resting = characters[index].behavior.intent
+                input(characters[index].id, resting == .sleep ? .sleepEnded : .dozeEnded, now: now)
             }
             if let tile = advanceWalk(index, now: now) { arrived.append((characters[index].id, tile)) }
         }
@@ -243,7 +266,8 @@ nonisolated struct Simulation: Sendable {
         case .leave(let id):
             characters.removeAll { $0.id == id }
         case .place(let id, let position):
-            guard let index = index(of: id), characters[index].walking == nil, characters[index].midway == nil else { return nil }
+            guard let index = index(of: id), characters[index].walking == nil, characters[index].midway == nil,
+                  characters[index].bed == nil else { return nil }
             characters[index].position = position
         case .ownerTapped(let id, let date):
             // 主人點了就記下，不論角色當下有沒有回應
@@ -254,15 +278,22 @@ nonisolated struct Simulation: Sendable {
         case .addSleepiness(let amount):
             for index in characters.indices where characters[index].sleepiness != nil {
                 characters[index].sleepiness?.add(amount, at: now)
-                if characters[index].behavior.intent == .doze { scheduleWake(index, now: now) }
+                if [.doze, .sleep].contains(characters[index].behavior.intent) { scheduleWake(index, now: now) }
             }
         }
         return nil
     }
 
-    /// 交給這一隻的狀態機；意圖變了就照新的意圖做。
+    /// 交給這一隻的狀態機；意圖變了就照新的意圖做。要牠上床時先選好床位，選不到（不在床邊、床位被佔走）就不理。
     private mutating func input(_ id: CharacterID, _ request: CharacterBehavior.Input, now: Double) {
-        guard let index = index(of: id), characters[index].behavior.handle(request) else { return }
+        guard let index = index(of: id) else { return }
+        var place: BedPlace?
+        if request == .sleepRequested {
+            place = bedPlace(for: index)
+            if place == nil { return }
+        }
+        guard characters[index].behavior.handle(request) else { return }
+        if let place { characters[index].bed = place }
         apply(index, now: now)
     }
 
@@ -271,13 +302,19 @@ nonisolated struct Simulation: Sendable {
         guard let index = index(of: id), characters[index].behavior.intent == .idle,
               var routine = characters[index].wander else { return }
         let others = Set(characters.indices.filter { $0 != index }.map { Self.whereabouts(of: characters[$0]) })
-        // 沒有打瞌睡的動作（例如灰色剪影）就不打瞌睡
+        // 沒有打瞌睡、睡覺的動作（例如灰色剪影）就不打瞌睡、不去床上睡
         let canDoze = characters[index].motions.motion(named: "doze") != nil
         let sleepiness = canDoze ? characters[index].sleepiness?.level(at: now) : nil
-        let next = routine.next(from: Tile(containing: characters[index].position), others: others, now: now,
-                                sleepiness: sleepiness, using: &rng)
+        let freeSlots = characters[index].motions.canSleep ? self.freeSlots : []
+        let here = Tile(containing: characters[index].position)
+        var next = routine.next(from: here, others: others, now: now, sleepiness: sleepiness, freeSlots: freeSlots, using: &rng)
+        if next == .sleep, bedPlace(for: index) == nil {
+            // 走到了床位卻被佔走，或在半路放棄走到：改去另一個空的床位，沒有就做別的事
+            next = routine.retryBed(from: here, others: others, freeSlots: freeSlots, using: &rng)
+                ?? routine.next(from: here, others: others, now: now, sleepiness: sleepiness, using: &rng)
+        }
         characters[index].wander = routine
-        if let next, characters[index].behavior.handle(next.request) { apply(index, now: now) }
+        if let next { input(id, next.request, now: now) }
     }
 
     /// 照狀態機現在的意圖做：換播對應的動作、站著，或開始移動。
@@ -288,7 +325,9 @@ nonisolated struct Simulation: Sendable {
     /// - 站著：轉向意圖給的方向（nil 不轉），站滿後回報播完。
     /// - 待機：不換方向，走到後維持走的方向。
     /// - 循環的動作（例如打瞌睡，ADR 0010）一直播，不會播完。
-    /// - 睏意照新的意圖改變增減的速度；打瞌睡時算好什麼時候自己醒來，醒來（或被點醒）時閒晃開始算打瞌睡的冷卻。
+    /// - 分段的動作（例如上床，ADR 0011）：方向、位置與離地高度照每一段，見 `advanceStages`。
+    /// - 不在床上了（下床落地）：放開床位，回到地板上。
+    /// - 睏意照新的意圖改變增減的速度；打瞌睡、睡覺時算好什麼時候自己醒來，醒來（或被點醒）時閒晃開始算冷卻。
     private mutating func apply(_ index: Int, now: Double) {
         let intent = characters[index].behavior.intent
         if let name = intent.motionName {
@@ -298,12 +337,19 @@ nonisolated struct Simulation: Sendable {
         } else {
             characters[index].playing = nil
         }
+        if intent.isInBed {
+            characters[index].bed?.pausedAt = nil
+            advanceStages(index, now: now)
+        } else if characters[index].bed != nil {
+            characters[index].bed = nil
+            characters[index].height = 0
+        }
         updateSleepiness(index, now: now)
         if let walk = characters[index].walking { characters[index].midway = Self.midway(of: walk) }
         characters[index].walking = nil
         characters[index].standUntil = nil
         switch intent {
-        case .idle, .hello, .sitDown, .doze, .standUp, .wakeStartled:
+        case .idle, .hello, .sitDown, .doze, .standUp, .wakeStartled, .climbIn, .sleep, .wakeTapped, .wakeRested:
             break
         case .stand(let facing, let seconds):
             if let facing { characters[index].facing = facing }
@@ -320,39 +366,116 @@ nonisolated struct Simulation: Sendable {
         }
     }
 
+    // MARK: - 床
+
+    /// 沒有別隻佔住的床位，依箱庭的順序。
+    private var freeSlots: [FurnitureSlotID] {
+        let used = Set(characters.compactMap { $0.bed?.slot })
+        return room.slotIDs.filter { !used.contains($0) }
+    }
+
+    /// 這一隻站的格子可以上哪個空的床位：把這一格當成第一個選擇的床位優先。不在床邊、或床位都被佔走是 nil。
+    private func bedPlace(for index: Int) -> BedPlace? {
+        guard characters[index].bed == nil, characters[index].midway == nil else { return nil }
+        let here = Tile(containing: characters[index].position)
+        let choices = freeSlots.compactMap { id in room.slot(id).entries.firstIndex(of: here).map { (id: id, order: $0) } }
+        return choices.min { $0.order < $1.order }.map { BedPlace(slot: $0.id, floor: here) }
+    }
+
+    /// 分段的動作（ADR 0011）這一刻的方向、位置與離地高度：位移的端點是這隻的床位（床邊、床位）與地板的格子。
+    /// 要跳下床時先挑沒被佔住的格子落地；都被佔住就停在跳之前，空出來再接著播。
+    private mutating func advanceStages(_ index: Int, now: Double) {
+        guard let playing = characters[index].playing, var bed = characters[index].bed,
+              let name = playing.intent.motionName, let motion = characters[index].motions.motion(named: name) else { return }
+        var t = now - playing.start
+        if let paused = bed.pausedAt {
+            guard let tile = landing(for: index, slot: bed.slot) else { return }
+            bed.floor = tile
+            bed.holdsFloor = true
+            bed.pausedAt = nil
+            t = paused
+            characters[index].playing?.start = now - paused
+        }
+        guard let (stage, local) = motion.stage(at: t) else { return }
+        let leaving = motion.stages[stage].travel?.to == .entry
+        var localTime = local, current = stage
+        if leaving, !bed.holdsFloor {
+            if let tile = landing(for: index, slot: bed.slot) {
+                bed.floor = tile
+                bed.holdsFloor = true
+            } else {
+                // 停在這一段開始之前，也就是上一段的結尾
+                bed.pausedAt = motion.stageStart(stage)
+                current = max(0, stage - 1)
+                localTime = motion.stages[current].duration
+            }
+        } else if !leaving {
+            bed.holdsFloor = playing.intent == .climbIn && stage == 0
+        }
+        characters[index].bed = bed
+        if let facing = Facing(rawValue: motion.stages[current].look) { characters[index].facing = facing }
+        // 這一段沒有位移時，停在前面最近一段位移的終點
+        guard let moving = motion.stages[...current].lastIndex(where: { $0.travel != nil }),
+              let travel = motion.stages[moving].travel else { return }
+        let (ratio, lift) = travel.at(moving == current ? localTime : motion.stages[moving].duration)
+        let a = point(travel.from, bed), b = point(travel.to, bed)
+        characters[index].position = TilePosition(i: a.at.i + (b.at.i - a.at.i) * ratio, j: a.at.j + (b.at.j - a.at.j) * ratio)
+        characters[index].height = a.height + (b.height - a.height) * ratio + lift
+    }
+
+    /// 位移的端點在箱庭的哪裡、離地多高。
+    private func point(_ place: CharacterMotions.Travel.Place, _ bed: BedPlace) -> (at: TilePosition, height: Double) {
+        let slot = room.slot(bed.slot), height = Double(room.furniture[bed.slot.furniture].height)
+        switch place {
+        case .entry: return (bed.floor.center, 0)
+        case .edge: return (slot.edge, height)
+        case .slot: return (slot.position, height)
+        }
+    }
+
+    /// 下床可以落在哪一格：依偏好，第一個沒被別隻佔住的；都被佔住是 nil。
+    private func landing(for index: Int, slot: FurnitureSlotID) -> Tile? {
+        let taken = takenByOthers(except: index)
+        return room.slot(slot).entries.first { !taken.contains($0) }
+    }
+
     // MARK: - 睏意
 
-    /// 照現在的意圖改睏意增減的速度：打瞌睡時下降，移動時照快慢增加，其他（站著、播動作）照站著增加。
-    /// 打瞌睡時算好什麼時候醒；不在打瞌睡就清掉。剛醒來（自己醒、被點醒）時告訴閒晃開始算冷卻。
+    /// 照現在的意圖改睏意增減的速度：打瞌睡、睡覺時下降，移動時照快慢增加，其他（站著、播動作）照站著增加。
+    /// 打瞌睡、睡覺時算好什麼時候醒；醒著就清掉。剛醒來（自己醒、被點醒）時告訴閒晃開始算冷卻。
     private mutating func updateSleepiness(_ index: Int, now: Double) {
         let intent = characters[index].behavior.intent
         if intent == .standUp || intent == .wakeStartled { characters[index].wander?.dozeEnded(at: now) }
+        if intent == .wakeTapped || intent == .wakeRested { characters[index].wander?.sleepEnded(at: now) }
         guard let config = characters[index].wander?.config.sleepiness, characters[index].sleepiness != nil else {
-            characters[index].dozeUntil = nil
+            characters[index].restUntil = nil
             return
         }
         let rise = config.risePerMinute
         let perMinute: Double
         switch intent {
         case .doze: perMinute = -config.doze.fallPerMinute
+        case .sleep: perMinute = -(config.sleep ?? config.doze).fallPerMinute
         case .move(_, .slow): perMinute = rise.slow
         case .move(_, .fast): perMinute = rise.fast
         default: perMinute = rise.still
         }
         characters[index].sleepiness?.change(perSecond: perMinute / 60, at: now)
-        if intent == .doze { scheduleWake(index, now: now) } else { characters[index].dozeUntil = nil }
+        if [.doze, .sleep].contains(intent) { scheduleWake(index, now: now) } else { characters[index].restUntil = nil }
     }
 
-    /// 打瞌睡什麼時候自己醒：睏意降到 `wakeBelow` 之後，等打瞌睡的動作播完那一個循環（至少一個循環）。
+    /// 打瞌睡、睡覺什麼時候自己醒：睏意降到 `wakeBelow` 之後，等那個動作播完那一個循環（至少一個循環）。
     private mutating func scheduleWake(_ index: Int, now: Double) {
-        guard let config = characters[index].wander?.config.sleepiness, let sleepiness = characters[index].sleepiness else { return }
+        guard let config = characters[index].wander?.config.sleepiness, let sleepiness = characters[index].sleepiness,
+              let name = characters[index].behavior.intent.motionName else { return }
+        let rest = characters[index].behavior.intent == .sleep ? config.sleep ?? config.doze : config.doze
         let start = characters[index].playing?.start ?? now
-        let ready = now + sleepiness.secondsUntil(fallingTo: config.doze.wakeBelow, from: now)
-        guard let cycle = characters[index].motions.motion(named: "doze")?.cycle else {
-            characters[index].dozeUntil = ready
+        let ready = now + sleepiness.secondsUntil(fallingTo: rest.wakeBelow, from: now)
+        guard let cycle = characters[index].motions.motion(named: name)?.cycle else {
+            characters[index].restUntil = ready
             return
         }
-        characters[index].dozeUntil = start + max(1, ((ready - start) / cycle).rounded(.up)) * cycle
+        characters[index].restUntil = start + max(1, ((ready - start) / cycle).rounded(.up)) * cycle
     }
 
     // MARK: - 走路
@@ -413,9 +536,10 @@ nonisolated struct Simulation: Sendable {
         index == leadIndex ? Self.detourAfter.lead : Self.detourAfter.others
     }
 
-    /// 一隻角色佔住的格子（每隻佔一格；ADR 0009：鯊魚比企鵝瘦，也放得進一格）：站的那一格，在兩格之間時是兩格；正在走、沒在等的話，再加上要走進去的下一格，
+    /// 一隻角色佔住的地板格子（在床上只有剛開始上床、正在跳下床時佔一格；每隻佔一格；ADR 0009：鯊魚比企鵝瘦，也放得進一格）：站的那一格，在兩格之間時是兩格；正在走、沒在等的話，再加上要走進去的下一格，
     /// 兩隻同時要走進同一格時才不會撞在一起。
     private static func taken(by character: Character) -> Set<Tile> {
+        if let bed = character.bed { return bed.holdsFloor ? [bed.floor] : [] }
         let p = character.position
         var tiles: Set<Tile> = [Tile(i: Int((p.i - 0.5).rounded(.down)), j: Int((p.j - 0.5).rounded(.down))),
                                 Tile(i: Int((p.i - 0.5).rounded(.up)), j: Int((p.j - 0.5).rounded(.up)))]
@@ -512,7 +636,10 @@ nonisolated struct Simulation: Sendable {
 
     /// 快照裡的「在做什麼」：正在播的動作優先；移動中等別隻讓路時算站著（站姿）。
     private static func activity(of character: Character) -> SimulationSnapshot.Activity {
-        if let playing = character.playing { return .motion(playing.intent, since: playing.start) }
+        if let playing = character.playing {
+            if let paused = character.bed?.pausedAt { return .paused(playing.intent, at: paused) }
+            return .motion(playing.intent, since: playing.start)
+        }
         if let walk = character.walking, walk.waitingSince == nil { return .moving(walk.pace, elapsed: walk.elapsed) }
         return .still
     }

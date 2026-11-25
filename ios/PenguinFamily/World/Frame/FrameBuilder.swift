@@ -8,6 +8,7 @@ import Foundation
 /// - **不改世界狀態、不做遊戲判斷**：點到哪一隻只回報身分，送進模擬的是外面（`RoomScene`）。
 /// - **前後順序**：家具依「最靠近主人的角」排；角色依腳底高度插進去，再照和家具的格子關係修正（2026-11-18）：
 ///   長家具（例如佔三格的沙發）最近的角很低，只比腳底高度的話，站在它旁邊前方的角色會被畫到後面。
+///   在家具上的角色（ADR 0011，例如躺在床上、正在上下床）一定畫在那件家具前面；角色之間照站的那一點的前後，不看離地多高。
 /// - **不分物種**（ADR 0009）：照每隻的動作資料找片段、播到這一刻，不知道是哪種動物、哪個動作。造型沒有某個方向時
 ///   （例如灰色剪影沒有斜向）面向鏡頭。缺角色包的替身在交給這裡之前就換好了（`StandIn`）。
 /// - **鏡頭**：一開始對準第一隻的身體中央；閒置後慢慢回到第一隻身邊（作者 2026-11-19 決定），第一隻不在台上時看下一隻。
@@ -64,7 +65,12 @@ final class FrameBuilder {
         let id: CharacterID
         let order: Int
         let position: TilePosition
+        /// 放在箱庭的哪一點（已經算進離地高度）。
         let feet: ScenePoint
+        /// 站的那一點在地板上的高度（畫面的 y），排前後用。
+        let depth: Double
+        /// 在第幾件家具上；在地板上是 nil。
+        let support: Int?
         let pose: CharacterPose
     }
 
@@ -201,9 +207,13 @@ final class FrameBuilder {
                 TilePosition(i: a.position.i + (character.position.i - a.position.i) * alpha,
                              j: a.position.j + (character.position.j - a.position.j) * alpha)
             } ?? character.position
+            let height = before.map { $0.height + (character.height - $0.height) * alpha } ?? character.height
             let pose = Self.pose(of: character, before: before, alpha: alpha, at: time, rig: rig,
                                  motions: castMotions[character.id] ?? .still)
-            return Placed(id: character.id, order: order, position: position, feet: iso.feet(at: position), pose: pose)
+            let ground = iso.feet(at: position)
+            return Placed(id: character.id, order: order, position: position,
+                          feet: ScenePoint(x: ground.x, y: ground.y - height), depth: ground.y,
+                          support: character.support ?? (alpha < 1 ? before?.support : nil), pose: pose)
         }
     }
 
@@ -211,6 +221,7 @@ final class FrameBuilder {
     /// - 移動：步態的循環片段，播到走了幾秒（兩份快照之間內插；重新起步時不往回算）。
     /// - 播動作：照「畫的時間 − 開始的時間」播（還沒開始算 0 秒）；一次性的播完停在最後一格，循環的接回開頭（ADR 0010）。
     /// - 片段裡顯示或藏起來的部件與特效（ADR 0010）一起放進姿勢。
+    /// - 分段的動作（ADR 0011）看那一刻在哪一段，用那一段的造型；停住時（例如在床邊等）畫停住的那一刻，接著播的第一格不往回跳。
     /// - 站著、等別隻讓路，或這個方向沒有片段：每個部件在原位。
     /// - 造型沒有這個方向時（例如灰色剪影沒有斜向）面向鏡頭。翻轉的方向用來源的片段。
     static func pose(of character: SimulationSnapshot.Character, before: SimulationSnapshot.Character?, alpha: Double,
@@ -225,11 +236,15 @@ final class FrameBuilder {
             }
             let gait = motions.gait(for: pace)
             guard let clip = gait.clips[source] else { return CharacterPose(facing: facing) }
-            return CharacterPose(facing: facing, parts: clip.poses(at: t, cycle: gait.cycle),
-                                 shown: clip.visibility(at: t, cycle: gait.cycle), effects: clip.effectPoses(at: t, cycle: gait.cycle))
+            return CharacterPose(look: facing.rawValue, clip: clip, at: t, cycle: gait.cycle)
         case .motion(let intent, let since):
             guard let name = intent.motionName, let motion = motions.motion(named: name) else { return CharacterPose(facing: facing) }
-            return motion.pose(facing: facing, source: source, at: time - since) ?? CharacterPose(facing: facing)
+            var t = time - since
+            if case .paused(intent, let paused)? = before?.activity { t = max(paused, t) }
+            return motion.pose(facing: facing, rig: rig, at: t) ?? CharacterPose(facing: facing)
+        case .paused(let intent, let paused):
+            guard let name = intent.motionName, let motion = motions.motion(named: name) else { return CharacterPose(facing: facing) }
+            return motion.pose(facing: facing, rig: rig, at: paused) ?? CharacterPose(facing: facing)
         case .still:
             return CharacterPose(facing: facing)
         }
@@ -250,18 +265,22 @@ final class FrameBuilder {
             guard case .furniture(let i) = sprite.key else { return (sprite, 0, nil) }
             return (sprite, Double(furnitureSprites[i].depth), room.furniture[i].footprint)
         }
-        // 角色之間：腳底高的先畫；一樣時後上台的畫在後面（前面）
-        for character in placed.sorted(by: { ($0.feet.y, $0.order) < ($1.feet.y, $1.order) }) {
-            var at = order.firstIndex { $0.depth > character.feet.y } ?? order.count
+        // 角色之間：站得高（遠）的先畫；一樣時後上台的畫在後面（前面）。前面的角色不會插到已經放好的角色後面
+        var lastCharacter: Int?
+        for character in placed.sorted(by: { ($0.depth, $0.order) < ($1.depth, $1.order) }) {
+            var at = order.firstIndex { $0.depth > character.depth } ?? order.count
+            if let lastCharacter { at = max(at, lastCharacter + 1) }
             for (k, item) in order.enumerated() {
                 guard let footprint = item.footprint else { continue }
-                switch Self.relation(of: character.position, to: footprint) {
+                let onTop = character.support.map { item.sprite.key == .furniture($0) } ?? false
+                switch onTop ? .front : Self.relation(of: character.position, to: footprint) {
                 case .front where k >= at: at = k + 1
                 case .behind where k < at: at = k
                 default: break
                 }
             }
-            order.insert((sprite(of: character), character.feet.y, nil), at: at)
+            order.insert((sprite(of: character), character.depth, nil), at: at)
+            lastCharacter = at
         }
         let background = Sprite(key: .background, x: 0, y: 0,
                                 width: Double(iso.canvasWidth), height: Double(iso.canvasHeight))
@@ -286,16 +305,17 @@ final class FrameBuilder {
         return .unknown
     }
 
-    /// 角色畫布的腳底對到站的點；畫布的大小看這個方向的圖（翻轉的方向用來源的）。
+    /// 角色畫布的腳底對到站的點；畫布的大小看這個方向或姿勢的圖（翻轉的方向用來源的）。
     private func sprite(of character: Placed) -> Sprite {
         let rig = castRigs[character.id] ?? .placeholder
-        let canvas = rig.look(character.pose.facing.rawValue).flatMap { rig.facings[$0.source] } ?? rig.front
+        let canvas = rig.look(character.pose.look).flatMap { rig.drawn($0.source) } ?? rig.front
         return Sprite(key: .character(character.id), x: character.feet.x - canvas.feet.x, y: character.feet.y - canvas.feet.y,
                       width: canvas.canvas.width, height: canvas.canvas.height, pose: character.pose)
     }
 
     /// 繪製清單：角色每個部件的矩陣把部件的畫布座標換到畫面上的 pt（姿勢 → 放到箱庭上 → 鏡頭 → 縮放）。
     /// 藏起來的部件不放進去；看得到的特效緊接在那隻角色後面（蓋在牠上面，ADR 0010），沒有那個形狀的特效不畫。
+    /// 造型有影子的（ADR 0011）先畫影子，再畫那隻角色。
     private func drawList(_ sprites: [Sprite], _ transform: ViewTransform) -> DrawList {
         let items: [DrawList.Item] = sprites.flatMap { sprite -> [DrawList.Item] in
             switch sprite.key {
@@ -313,7 +333,10 @@ final class FrameBuilder {
                     let m = rig.effectMatrix(effect, pivot: shape.pivot, look: frame.look)
                     return .effect(effect.name, transform: toScreen * m, alpha: effect.alpha)
                 }
-                return [.character(id, look: frame.look.source, parts: parts)] + effectItems
+                let shadow = rig.drawn(frame.look.source)?.shadow.map {
+                    DrawList.Item.shadow(id, look: frame.look.source, transform: toScreen, alpha: $0.opacity)
+                }
+                return [shadow, .character(id, look: frame.look.source, parts: parts)].compactMap { $0 } + effectItems
             }
         }
         return DrawList(viewportWidth: viewport.width, viewportHeight: viewport.height, topLeftX: transform.topLeftX,
@@ -337,15 +360,33 @@ final class FrameBuilder {
         onChange()
     }
 
-    /// 這一點點到哪一隻角色（照上一格畫的位置）；沒點到是 nil。觸控範圍是整張角色畫布，比角色本身大一圈。
+    /// 這一點點到哪一隻角色（照上一格畫的位置）；沒點到是 nil。觸控範圍是整張角色畫布，比角色本身大一圈；
+    /// 造型自己有觸控範圍的（ADR 0011，例如躺著）用它的。
     /// 兩隻重疊時，畫在前面（離主人近）的那隻優先。
     func character(at point: CGPoint) -> CharacterID? {
         guard let transform = viewTransform else { return nil }
         let x = transform.topLeftX + point.x / transform.pointsPerUnit
         let y = transform.topLeftY + point.y / transform.pointsPerUnit
-        let hit = lastCharacters.first { x >= $0.x && x < $0.x + $0.width && y >= $0.y && y < $0.y + $0.height }
-        guard case .character(let id)? = hit?.key else { return nil }
-        return id
+        for sprite in lastCharacters {
+            guard case .character(let id) = sprite.key else { continue }
+            let touch = sprite.pose.flatMap { castRigs[id]?.drawn($0.look)?.touch }
+            let hit = touch.map { Self.contains($0, x: x - sprite.x, y: y - sprite.y) }
+                ?? (x >= sprite.x && x < sprite.x + sprite.width && y >= sprite.y && y < sprite.y + sprite.height)
+            if hit { return id }
+        }
+        return nil
+    }
+
+    /// 這一點在不在多邊形裡（射線法）。
+    static func contains(_ polygon: [VectorRig.Point], x: Double, y: Double) -> Bool {
+        var inside = false
+        var j = polygon.count - 1
+        for i in polygon.indices {
+            let a = polygon[i], b = polygon[j]
+            if (a.y > y) != (b.y > y), x < (b.x - a.x) * (y - a.y) / (b.y - a.y) + a.x { inside.toggle() }
+            j = i
+        }
+        return inside
     }
 
     /// 主人碰了箱庭（例如點角色）：重新計算閒置。

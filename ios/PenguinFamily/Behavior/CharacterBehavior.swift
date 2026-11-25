@@ -10,8 +10,10 @@
 /// - 移動中被點：當場停下哈囉，播完接著走原本那段路（作者 2026-11-19 決定）。
 /// - 待機 →（睏了，要牠打瞌睡）→ 坐下 →（播完）→ 坐著打瞌睡 →（睏意降下來）→ 自己醒來站起來 →（播完）→ 待機；
 ///   坐下或打瞌睡時被點：驚醒揉眼睛 →（播完）→ 待機（作者 2026-11-20、11-23 決定）。打瞌睡是循環的動作，不會「播完」。
-/// 要牠走去哪、站多久、什麼時候打瞌睡由閒晃（`WanderRoutine`）決定，什麼時候醒來由模擬照睏意決定。
-/// 哈囉、自己醒來、驚醒時再點不理（點一下的反應依權重是 A1 第 14 項）。
+/// - 待機 →（走到床邊，要牠上床）→ 上床躺下 →（播完）→ 睡覺 →（睡飽）→ 伸懶腰下床 →（播完）→ 待機；
+///   睡覺時被點：揉眼睛下床 →（播完）→ 待機（ADR 0011）。走去床邊是一般的移動。睡覺也是循環的動作。
+/// 要牠走去哪、站多久、什麼時候打瞌睡或睡覺由閒晃（`WanderRoutine`）決定，什麼時候醒來由模擬照睏意決定。
+/// 哈囉、自己醒來、驚醒、上床、下床時再點不理（點一下的反應依權重是 A1 第 14 項；上下床作者 2026-11-24 決定）。
 ///
 /// 狀態每隻共用、不分物種（作者 2026-11-19 決定；ADR 0009）：每個狀態看起來怎麼動是每隻自己的動作資料
 /// （`CharacterMotions`），什麼時候做什麼是每隻自己的閒晃資料（`WanderConfig`），都放在各自的角色包，這裡不分是哪一隻。
@@ -40,6 +42,14 @@ nonisolated struct CharacterBehavior: Equatable, Sendable {
         case standUp
         /// 坐下或打瞌睡時被點：轉向鏡頭，泡泡破掉、彈起來，揉眼睛。
         case wakeStartled
+        /// 從床邊跳上床、走到床位、坐下、躺平（播完接著睡）。
+        case climbIn
+        /// 躺在床上睡：循環的動作，直到被點或睡飽。
+        case sleep
+        /// 睡覺時被點：換成坐著揉眼睛，再下床。
+        case wakeTapped
+        /// 睡飽：換成坐著伸懶腰，再下床。
+        case wakeRested
 
         /// 這個意圖要播的動作（角色動作資料裡的名稱）；待機、移動、站著不播。
         /// 角色沒有這個動作時，模擬當作馬上播完。
@@ -50,12 +60,20 @@ nonisolated struct CharacterBehavior: Equatable, Sendable {
             case .doze: "doze"
             case .standUp: "standUp"
             case .wakeStartled: "wakeStartled"
+            case .climbIn: "climbIn"
+            case .sleep: "sleep"
+            case .wakeTapped: "wakeTapped"
+            case .wakeRested: "wakeRested"
             case .idle, .move, .stand: nil
             }
         }
 
         /// 會播動作的意圖（不帶參數的），依動作名稱找意圖用（例如測試拿動作資料比對）。
-        static let playing: [Intent] = [.hello, .sitDown, .doze, .standUp, .wakeStartled]
+        static let playing: [Intent] = [.hello, .sitDown, .doze, .standUp, .wakeStartled,
+                                        .climbIn, .sleep, .wakeTapped, .wakeRested]
+
+        /// 在床上（含上床、下床）。
+        var isInBed: Bool { [.climbIn, .sleep, .wakeTapped, .wakeRested].contains(self) }
     }
 
     /// 會改變行為的事。
@@ -74,6 +92,10 @@ nonisolated struct CharacterBehavior: Equatable, Sendable {
         case dozeRequested
         /// 打瞌睡夠了（模擬照睏意決定），自己醒來。
         case dozeEnded
+        /// 站在床邊，要牠上床睡（由閒晃照睏意決定，模擬先選好床位）。
+        case sleepRequested
+        /// 睡飽了（模擬照睏意決定）。
+        case sleepEnded
     }
 
     private(set) var intent: Intent = .idle
@@ -123,14 +145,26 @@ nonisolated struct CharacterBehavior: Equatable, Sendable {
             return .standUp
         case (.standUp, .motionFinished), (.wakeStartled, .motionFinished):
             return .idle
-        case (.hello, .ownerTapped), (.standUp, .ownerTapped), (.wakeStartled, .ownerTapped):
+        case (.idle, .sleepRequested):
+            return .climbIn
+        case (.climbIn, .motionFinished):
+            return .sleep
+        case (.sleep, .ownerTapped):
+            // 只醒被點的這隻（作者 2026-11-20 決定）
+            return .wakeTapped
+        case (.sleep, .sleepEnded):
+            return .wakeRested
+        case (.wakeTapped, .motionFinished), (.wakeRested, .motionFinished):
+            return .idle
+        case (.hello, .ownerTapped), (.standUp, .ownerTapped), (.wakeStartled, .ownerTapped),
+             (.climbIn, .ownerTapped), (.wakeTapped, .ownerTapped), (.wakeRested, .ownerTapped):
             // 播放中再點不重來，播完才能再打招呼
             return nil
-        case (_, .moveRequested), (_, .standRequested), (_, .dozeRequested), (_, .dozeEnded):
+        case (_, .moveRequested), (_, .standRequested), (_, .dozeRequested), (_, .dozeEnded), (_, .sleepRequested), (_, .sleepEnded):
             // 正在做別的事，做完才接下一件
             return nil
         case (_, .motionFinished), (_, .arrived):
-            // 打瞌睡是循環的動作，不會播完；角色沒有打瞌睡的動作時，坐下後就這樣站著等醒來
+            // 打瞌睡、睡覺是循環的動作，不會播完；角色沒有打瞌睡的動作時，坐下後就這樣站著等醒來
             return nil
         }
     }

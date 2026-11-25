@@ -22,7 +22,9 @@ nonisolated struct DrawList: Equatable, Sendable {
     enum Item: Equatable, Sendable {
         /// 箱庭的一組多邊形（背景或某件家具）；頂點在載入時已經送進 GPU，位置是箱庭的單位。
         case polygons(DrawKey)
-        /// 一隻角色：用哪個方向的貼圖（翻轉的方向用來源的，矩陣裡已經翻好），部件依畫的先後（藏起來的不在裡面）。
+        /// 一隻角色底下的半透明影子（ADR 0011）：照 `transform` 把角色畫布的座標換到畫面上的 pt，乘上不透明度。
+        case shadow(CharacterID, look: String, transform: Affine2D, alpha: Double)
+        /// 一隻角色：用哪個方向或姿勢的貼圖（翻轉的方向用來源的，矩陣裡已經翻好），部件依畫的先後（藏起來的不在裡面）。
         /// 先畫整隻的外框、再畫顏色，部件重疊處才不會多出內線。
         case character(CharacterID, look: String, parts: [Part])
         /// 一個共用特效（ADR 0010，例如 Z、泡泡）：照 `transform` 把特效的座標換到畫面上的 pt，乘上透明度。

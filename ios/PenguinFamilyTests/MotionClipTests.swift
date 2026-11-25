@@ -199,14 +199,15 @@ struct MotionClipTests {
     }
 
     @Test func loopingMotionNeverHoldsTheEnd() throws {
+        let rig = try VectorRigTests.rig(VectorRigTests.walkingJSON)
         let doze = try #require(try Self.motions(Self.v3JSON).motion(named: "doze"))
-        let at1 = try #require(doze.pose(facing: .frontLeft, source: "front", at: 1))
-        let at3 = try #require(doze.pose(facing: .frontLeft, source: "front", at: 3))
-        #expect(at1 == at3 && at1.facing == .frontLeft && at1.shown["eyesClosed"] == true && at1.parts["head"]?.rotate == 10)
+        let at1 = try #require(doze.pose(facing: .front, rig: rig, at: 1))
+        let at3 = try #require(doze.pose(facing: .front, rig: rig, at: 3))
+        #expect(at1 == at3 && at1.look == "front" && at1.shown["eyesClosed"] == true && at1.parts["head"]?.rotate == 10)
         let wake = try #require(try Self.motions(Self.v3JSON).motion(named: "wakeStartled"))
-        #expect(wake.pose(facing: .front, source: "front", at: 5)?.parts["arm"]?.rotate == -90)   // 一次性的停在最後
-        #expect(wake.pose(facing: .front, source: "front", at: 5)?.shown["eyesClosed"] == false)
-        #expect(wake.pose(facing: .front, source: "frontLeft", at: 0) == nil)                     // 沒有這個方向的片段
+        #expect(wake.pose(facing: .front, rig: rig, at: 5)?.parts["arm"]?.rotate == -90)   // 一次性的停在最後
+        #expect(wake.pose(facing: .front, rig: rig, at: 5)?.shown["eyesClosed"] == false)
+        #expect(wake.pose(facing: .frontLeft, rig: rig, at: 0) == nil)                     // 沒有這個方向的片段
     }
 
     @Test func rejectsBadVersion3Data() throws {
@@ -223,7 +224,7 @@ struct MotionClipTests {
         #expect(problem("[[0, 1], [0.5, 0]]", "[[0, 1], [0.5, 2]]") is DecodingError)
         #expect(problem("[[0, 1], [0.5, 0]]", "[[0.5, 1], [0.2, 0]]") as? CharacterMotionsError == .invalid("wakeStartled.front.visible.eyesClosed"))
         #expect(problem("\"cycle\": 2,", "") is DecodingError)                       // 沒有 duration 也沒有 cycle
-        #expect(problem("\"version\": 3", "\"version\": 4") as? CharacterMotionsError == .unsupportedVersion(4))
+        #expect(problem("\"version\": 3", "\"version\": 5") as? CharacterMotionsError == .unsupportedVersion(5))
         // 顯示時間表用到造型沒有的部件：對不上
         let motions = try? Self.motions(Self.v3JSON)
         #expect(motions?.problem(with: try VectorRigTests.rig()) == "doze.front.visible.eyesClosed")

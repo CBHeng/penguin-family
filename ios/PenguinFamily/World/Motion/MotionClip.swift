@@ -226,12 +226,30 @@ extension MotionClip: Decodable {
     }
 }
 
-/// 一隻角色某一格的樣子（ADR 0009、0010）：面向哪裡，每個部件從原位怎麼動（沒列到的在原位）、
+/// 一隻角色某一格的樣子（ADR 0009～0011）：用哪個造型（方向或姿勢的名稱），每個部件從原位怎麼動（沒列到的在原位）、
 /// 片段說要顯示或藏起來的部件（沒列到的照造型），與看得到的特效。
 /// 畫面準備照片段算出來，`VectorRig.frame` 換成每個部件的矩陣。
 nonisolated struct CharacterPose: Equatable, Sendable {
-    var facing: Facing
+    /// `Facing` 的名稱，或姿勢的名稱（例如 `lieBack`）。
+    var look: String
     var parts: [String: PartPose] = [:]
     var shown: [String: Bool] = [:]
     var effects: [EffectPose] = []
+
+    init(look: String, parts: [String: PartPose] = [:], shown: [String: Bool] = [:], effects: [EffectPose] = []) {
+        self.look = look
+        self.parts = parts
+        self.shown = shown
+        self.effects = effects
+    }
+
+    init(facing: Facing, parts: [String: PartPose] = [:], shown: [String: Bool] = [:], effects: [EffectPose] = []) {
+        self.init(look: facing.rawValue, parts: parts, shown: shown, effects: effects)
+    }
+
+    /// 片段第 `t` 秒的樣子，畫在 `look` 上。
+    init(look: String, clip: MotionClip, at t: Double, cycle: Double?) {
+        self.init(look: look, parts: clip.poses(at: t, cycle: cycle), shown: clip.visibility(at: t, cycle: cycle),
+                  effects: clip.effectPoses(at: t, cycle: cycle))
+    }
 }

@@ -6,13 +6,16 @@ import Testing
 /// App 照角色包的片段播（和畫面準備相同的找法），在每個關鍵影格上每個部件的矩陣、要畫哪些部件、
 /// 每個看得到的特效（矩陣與透明度）都要和算式相同；兩個關鍵影格中間不能差超過對照檔寫的 `tolerance`
 /// （部件套在畫布四個角上最遠差幾個單位；特效比轉軸四周的方框與透明度）。
-/// 哈囉、斜向四個方向（含翻轉的）的慢與快、坐下、打瞌睡、自己醒來、驚醒揉眼睛都比。動作用那個角色包自己的 `motion.json`（每隻各一份）。
+/// 哈囉、斜向四個方向（含翻轉的）的慢與快、坐下、打瞌睡、自己醒來、驚醒揉眼睛、上床、睡覺、被點醒、睡飽（分段的每一段，ADR 0011）都比。動作用那個角色包自己的 `motion.json`（每隻各一份）。
 /// 對照檔 `vector.golden.json` 由 `vector/export.js` 寫到測試用的角色包資料夾，不進 git；沒有時跳過。
 struct VectorPackParityTests {
     struct Golden: Decodable {
         /// 一個時間點：哪個動作（`hello`，或快慢 `slow`、`fast`）、哪個方向、第幾秒，算式算出的每個部件矩陣。
         struct Sample: Decodable {
             let motion: String
+            /// 分段的動作是第幾段；不分段的沒有。
+            let stage: Int?
+            /// 方向或姿勢。
             let facing: String
             let t: Double
             /// 兩個關鍵影格的中間（不是關鍵影格）。
@@ -59,6 +62,12 @@ struct VectorPackParityTests {
     /// App 在這個時間點播出來的樣子：和畫面準備相同，從快照的「在做什麼」找片段。
     static func played(_ sample: Golden.Sample, rig: VectorRig, motions: CharacterMotions) throws
         -> (transforms: [String: Affine2D], shown: [String], pose: CharacterPose, look: VectorRig.Look) {
+        // 分段的、用姿勢播的：直接拿那一段片段；其他照快照的「在做什麼」找
+        if let motion = motions.motion(named: sample.motion), let clip = Self.clip(sample, motion) {
+            let pose = CharacterPose(look: sample.facing, clip: clip, at: sample.t, cycle: motion.cycle)
+            let frame = try #require(rig.frame(pose))
+            return (frame.transforms, rig.shownParts(frame.look, pose), pose, frame.look)
+        }
         let facing = try #require(Facing(rawValue: sample.facing))
         let activity: SimulationSnapshot.Activity
         if let intent = CharacterBehavior.Intent.playing.first(where: { $0.motionName == sample.motion }) {
@@ -69,9 +78,17 @@ struct VectorPackParityTests {
         let character = SimulationSnapshot.Character(id: CharacterID("pack"), position: TilePosition(i: 0.5, j: 0.5),
                                                      facing: facing, activity: activity)
         let pose = FrameBuilder.pose(of: character, before: nil, alpha: 1, at: sample.t, rig: rig, motions: motions)
-        #expect(pose.facing == facing)
+        #expect(pose.look == sample.facing)
         let frame = try #require(rig.frame(pose))
         return (frame.transforms, rig.shownParts(frame.look, pose), pose, frame.look)
+    }
+
+    /// 分段的動作那一段的片段，或用姿勢播的片段；造型要和對照檔的一樣。其他是 nil。
+    static func clip(_ sample: Golden.Sample, _ motion: CharacterMotions.Motion) -> MotionClip? {
+        if let stage = sample.stage {
+            return motion.stages.indices.contains(stage) && motion.stages[stage].look == sample.facing ? motion.stages[stage].clip : nil
+        }
+        return motion.look == sample.facing ? motion.clips[sample.facing] : nil
     }
 
     /// 共用特效的形狀（App 裡的 `effects.json`）：比特效時用轉軸。
@@ -80,7 +97,8 @@ struct VectorPackParityTests {
     /// App 在這個時間點每條特效軌道的樣子（看不到的也在），換成這個方向的矩陣。
     static func playedEffects(_ sample: Golden.Sample, rig: VectorRig, motions: CharacterMotions, look: VectorRig.Look) throws
         -> [(name: String, m: Affine2D, alpha: Double)] {
-        guard let motion = motions.motion(named: sample.motion), let clip = motion.clips[look.source] else { return [] }
+        guard let motion = motions.motion(named: sample.motion),
+              let clip = Self.clip(sample, motion) ?? motion.clips[look.source] else { return [] }
         let t = motion.loops ? sample.t : min(max(0, sample.t), motion.duration)
         return try clip.effectPoses(at: t, cycle: motion.cycle, includeHidden: true).map { effect in
             let pivot = try #require(effects.effects[effect.name], "effects.json 沒有 \(effect.name)").pivot
@@ -113,6 +131,14 @@ struct VectorPackParityTests {
         for motion in ["sitDown", "doze", "standUp"] {
             #expect(facings(motion) == Set(Facing.allCases.map(\.rawValue)), "\(motion)")
         }
+        // 去床上睡（ADR 0011）：分段的每一段都比
+        #expect(facings("sleep") == ["lieBack"])
+        for motion in ["climbIn", "wakeTapped", "wakeRested"] {
+            let stages = try #require(try Self.load(pack).motions.motion(named: motion)).stages
+            let compared = golden.samples.filter { $0.motion == motion }
+            #expect(Set(compared.compactMap(\.stage)) == Set(stages.indices), "\(motion)")
+            #expect(Set(compared.map(\.facing)) == Set(stages.map(\.look)), "\(motion)")
+        }
     }
 
     @Test(.enabled(if: !packs.isEmpty, "沒有向量對照檔（乾淨 clone），跳過"), arguments: packs)
@@ -142,7 +168,7 @@ struct VectorPackParityTests {
         var worst = 0.0
         for sample in golden.samples where sample.between == true {
             let got = try Self.played(sample, rig: rig, motions: motions)
-            let canvas = try #require(rig.look(sample.facing).flatMap { rig.facings[$0.source] }).canvas
+            let canvas = try #require(rig.look(sample.facing).flatMap { rig.drawn($0.source) }).canvas
             for name in sample.shown {
                 worst = max(worst, Self.gap(try #require(got.transforms[name]), try #require(sample.transforms[name]), canvas: canvas))
             }

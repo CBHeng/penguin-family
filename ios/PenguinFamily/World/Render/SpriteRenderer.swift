@@ -67,8 +67,10 @@ final class SpriteRenderer: NSObject, MTKViewDelegate {
     private let polygonBuffer: MTLBuffer?
     /// 每一組多邊形在緩衝區裡是第幾個頂點到第幾個。
     private let polygonRanges: [DrawKey: Range<Int>]
-    /// 每一隻、每個畫好的方向、每個部件的貼圖。
+    /// 每一隻、每個畫好的方向或姿勢、每個部件的貼圖。
     private let vectorParts: [CharacterID: [String: [String: VectorPart]]]
+    /// 每一隻、每個有影子的造型的影子（ADR 0011）。
+    private let vectorShadows: [CharacterID: [String: VectorPart]]
     /// 共用特效的貼圖，依名稱。
     private let effectParts: [String: VectorPart]
     private var multisample: MTLTexture?
@@ -111,6 +113,7 @@ final class SpriteRenderer: NSObject, MTKViewDelegate {
 
         // 角色：部件畫成貼圖，產生 mipmap；共用特效也一樣
         var parts: [CharacterID: [String: [String: VectorPart]]] = [:]
+        var shadows: [CharacterID: [String: VectorPart]] = [:]
         var effectParts: [String: VectorPart] = [:]
         let pixelsPerUnit = Self.vectorPixelsPerUnit(displayScale: displayScale)
         let rasterize = PerfSignposts.signposter.beginInterval("rasterize")
@@ -129,12 +132,15 @@ final class SpriteRenderer: NSObject, MTKViewDelegate {
                 return VectorPart(name: images.name, bounds: images.bounds, outline: outline, fill: fill)
             }
             for (id, rig) in rigs {
-                for facing in rig.facings.keys {
+                for facing in Array(rig.facings.keys) + Array(rig.postures.keys) {
                     var list: [String: VectorPart] = [:]
                     for images in VectorRasterizer.rasterize(rig, facing: facing, pixelsPerUnit: pixelsPerUnit) {
                         list[images.name] = upload(images)
                     }
                     parts[id, default: [:]][facing] = list
+                    if let images = VectorRasterizer.rasterizeShadow(rig, facing: facing, pixelsPerUnit: pixelsPerUnit) {
+                        shadows[id, default: [:]][facing] = upload(images)
+                    }
                 }
             }
             for (name, effect) in effects.effects {
@@ -157,6 +163,7 @@ final class SpriteRenderer: NSObject, MTKViewDelegate {
         self.polygonBuffer = polygonBuffer
         self.polygonRanges = ranges
         self.vectorParts = parts
+        self.vectorShadows = shadows
         self.effectParts = effectParts
         self.textureBytes = bytes
         super.init()
@@ -252,6 +259,11 @@ final class SpriteRenderer: NSObject, MTKViewDelegate {
                 encoder.setVertexBuffer(polygonBuffer, offset: 0, index: 0)
                 encoder.setVertexBytes(&polygonUniforms, length: MemoryLayout<PolygonUniforms>.stride, index: 1)
                 encoder.drawPrimitives(type: .triangle, vertexStart: range.lowerBound, vertexCount: range.count)
+            case .shadow(let id, let look, let transform, let alpha):
+                guard let texture = vectorShadows[id]?[look] else { continue }
+                encoder.setRenderPipelineState(quadPipeline)
+                encoder.setFragmentSamplerState(smooth, index: 0)
+                drawQuad(encoder, corners(texture.bounds, transform, pixelsPerPoint), viewport, texture.fill, alpha: Float(alpha))
             case .character(let id, let look, let parts):
                 guard let textures = vectorParts[id]?[look] else { continue }
                 encoder.setRenderPipelineState(quadPipeline)
@@ -284,7 +296,7 @@ final class SpriteRenderer: NSObject, MTKViewDelegate {
         }
     }
 
-    /// `alpha` 是整張圖再乘上的透明度（特效淡入淡出用；角色是 1）。
+    /// `alpha` 是整張圖再乘上的透明度（特效淡入淡出、影子用；角色是 1）。
     private func drawQuad(_ encoder: MTLRenderCommandEncoder, _ corners: [SIMD2<Float>], _ viewport: SIMD2<Float>,
                           _ texture: MTLTexture, alpha: Float) {
         var quad = QuadUniforms(c0: corners[0], c1: corners[1], c2: corners[2], c3: corners[3], viewport: viewport)
