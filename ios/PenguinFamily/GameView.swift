@@ -2,7 +2,7 @@ import SwiftUI
 
 /// 主遊戲：箱庭與一家。載入完成後才進來，角色包與閒晃的資料都已經讀好。
 ///
-/// 只是外殼（ADR 0008）：把一家每一隻的身分、造型、動作與閒晃交給箱庭（缺角色包的換成替身，見 `StandIn`），
+/// 只是外殼（ADR 0008）：把一家每一隻的身分、造型、動作、閒晃與點一下的反應交給箱庭（缺角色包的換成替身，見 `StandIn`），
 /// 決定誰一開始在台上、站在哪。狀態機、閒晃、移動都在模擬裡，這裡不持有。
 /// 模擬交出「主人點了哪一隻」時，丟給事件紀錄在背景寫入（不等它存完）。
 struct GameView: View {
@@ -19,12 +19,19 @@ struct GameView: View {
     private let hasCharacters: Bool
     /// 共用特效的形狀（ADR 0010）。
     private let effects: EffectLibrary
+    /// 打開 App 時從事件紀錄讀到的、每隻最後一次被點的時間。
+    private let lastTaps: [CharacterID: Date]
+    /// 箱庭建好後的模擬驅動：角色的屬性條讀它的快照。
+    @State private var runner: SimulationRunner?
 
-    /// `wander` 是 App 裡的預設閒晃；角色包帶了自己的 `wander.json` 的那隻用自己的（作者 2026-11-19 決定每隻各自獨立）。
-    init(family: [FamilyMember], wander: WanderConfig?, effects: EffectLibrary = .empty, events: EventLog?) {
+    /// `wander`、`interactions` 是 App 裡的預設閒晃與點一下的反應；角色包帶了自己的那隻用自己的（作者 2026-11-19 決定每隻各自獨立）。
+    /// `lastTaps` 是每隻最後一次被點的時間（判斷離開一陣子後的第一次點）。
+    init(family: [FamilyMember], wander: WanderConfig?, interactions: InteractionConfig? = nil, effects: EffectLibrary = .empty,
+         events: EventLog?, lastTaps: [CharacterID: Date] = [:]) {
         self.events = events
         self.effects = effects
-        cast = RoomScene.Member.cast(family, defaultWander: wander)
+        self.lastTaps = lastTaps
+        cast = RoomScene.Member.cast(family, defaultWander: wander, defaultInteractions: interactions)
         hasCharacters = family.contains { $0.character != nil }
     }
 
@@ -47,14 +54,23 @@ struct GameView: View {
                 .ignoresSafeArea()
             RoomView(room: Self.room, cast: cast,
                      start: Self.startPositions(Self.initialStage(cast.map(\.id)), in: Self.room),
-                     effects: effects, onOutputs: record)
+                     effects: effects, lastTaps: lastTaps, onOutputs: record, onScene: { runner = $0.runner })
             .ignoresSafeArea()
-            if !hasCharacters {
-                Text("沒有角色包")
-                    .font(.caption)
-                    .foregroundStyle(.white)
-                    .padding(6)
-                    .background(.black.opacity(0.4), in: Capsule())
+            // 箱庭延伸到安全區域外，提示與屬性條放在這一層才不會被狀態列、瀏海蓋住
+            VStack(spacing: 8) {
+                if !hasCharacters {
+                    Text("沒有角色包")
+                        .font(.caption)
+                        .foregroundStyle(.white)
+                        .padding(6)
+                        .background(.black.opacity(0.4), in: Capsule())
+                }
+                // 角色的屬性條（作者 2026-11-27 要求；還沒 release 先都顯示，上架前關掉，見 AttributePanel.isEnabled）
+                if AttributePanel.isEnabled, let runner {
+                    AttributePanel(runner: runner)
+                        .padding(.horizontal, 12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
         }
         // 打開 App 時不特別迎接：牠們一上台就做自己的事（遊戲設計的「一天的節奏」）
@@ -70,5 +86,6 @@ struct GameView: View {
 }
 
 #Preview("沒有角色包") {
-    GameView(family: CharacterPackLibrary.loadFamily(in: nil), wander: WanderConfig.bundled(), effects: .bundled(), events: nil)
+    GameView(family: CharacterPackLibrary.loadFamily(in: nil), wander: WanderConfig.bundled(), interactions: InteractionConfig.bundled(),
+             effects: .bundled(), events: nil)
 }

@@ -22,8 +22,12 @@ struct RoomView: View {
     let start: [(id: CharacterID, position: TilePosition)]
     /// 共用特效的形狀（ADR 0010）。只在建箱庭時讀一次。
     let effects: EffectLibrary
+    /// 打開 App 時從事件紀錄讀到的、每隻最後一次被點的時間（A1 第 14 項）。只在建箱庭時讀一次。
+    let lastTaps: [CharacterID: Date]
     /// 模擬跑出來的事（例如主人點了哪一隻），交給外面記錄。
     var onOutputs: ([Simulation.Output]) -> Void = { _ in }
+    /// 箱庭建好時交給外面（例如角色的屬性條要讀它的快照）。
+    var onScene: (RoomScene) -> Void = { _ in }
 
     /// 除錯按鈕點一次加多少睏意（0～100）。
     static let debugSleepinessStep = 25.0
@@ -34,12 +38,15 @@ struct RoomView: View {
 
     /// 只記下參數，不建箱庭（見上面的說明）。
     init(room: RoomLayout, cast: [RoomScene.Member], start: [(id: CharacterID, position: TilePosition)],
-         effects: EffectLibrary = .empty, onOutputs: @escaping ([Simulation.Output]) -> Void = { _ in }) {
+         effects: EffectLibrary = .empty, lastTaps: [CharacterID: Date] = [:],
+         onOutputs: @escaping ([Simulation.Output]) -> Void = { _ in }, onScene: @escaping (RoomScene) -> Void = { _ in }) {
         self.room = room
         self.cast = cast
         self.start = start
         self.effects = effects
+        self.lastTaps = lastTaps
         self.onOutputs = onOutputs
+        self.onScene = onScene
     }
 
     var body: some View {
@@ -55,8 +62,10 @@ struct RoomView: View {
         }
         .onAppear {
             if scene == nil {
-                scene = RoomScene(room: room, cast: cast, start: start, seed: .random(in: .min ... .max),
-                                  now: CACurrentMediaTime(), effects: effects)
+                let created = RoomScene(room: room, cast: cast, start: start, seed: .random(in: .min ... .max),
+                                        now: CACurrentMediaTime(), effects: effects, lastTaps: lastTaps)
+                scene = created
+                onScene(created)
             }
         }
         #if DEBUG
@@ -82,9 +91,9 @@ struct RoomView: View {
         .accessibilityLabel("箱庭")
         .accessibilityAction(named: "點第一隻") {
             guard let scene, let first = scene.runner.current.characters.first else { return }
-            scene.builder.ownerTouched(now: CACurrentMediaTime())
-            scene.runner.send(.ownerTapped(first.id, at: .now))
+            scene.tap(first.id, now: CACurrentMediaTime())
         }
+
     }
 
     private func tapGesture(_ scene: RoomScene) -> some Gesture {

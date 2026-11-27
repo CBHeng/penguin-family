@@ -15,6 +15,36 @@ nonisolated struct SimulationSnapshot: Equatable, Sendable {
         case moving(CharacterBehavior.Pace, elapsed: Double)
     }
 
+    /// 一隻角色的一個屬性（例如睏意、耐心），給介面的屬性條（作者 2026-11-27 要求）。不分物種、不寫死有哪些：
+    /// 模擬照每隻的資料列出牠有的，介面照清單畫，之後加新的屬性不用改介面。
+    ///
+    /// 記「`since` 那一刻是 `value`、每秒變 `perSecond`」，要用時再算（和睏意、耐心本身的記法相同），
+    /// 所以模擬停下來不跑節拍時，介面照樣看得到它在變。
+    struct Meter: Equatable, Sendable {
+        /// 門檻線：到這個值會發生什麼（例如睏意 60 打瞌睡）。
+        struct Mark: Equatable, Sendable {
+            let value: Double
+            let label: String
+        }
+
+        /// 識別用的名稱（例如 `sleepiness`）。
+        let id: String
+        /// 給人看的名稱（例如「睏意」）。
+        let label: String
+        let range: ClosedRange<Double>
+        /// `since`（模擬的秒）那一刻的值。
+        let value: Double
+        let since: Double
+        /// 每秒變多少；超出範圍的停在兩端。
+        let perSecond: Double
+        let marks: [Mark]
+
+        /// 模擬時間 `time` 那一刻的值（不超出範圍）。
+        func level(at time: Double) -> Double {
+            min(max(value + perSecond * (time - since), range.lowerBound), range.upperBound)
+        }
+    }
+
     /// 台上的一隻。
     struct Character: Equatable, Sendable {
         let id: CharacterID
@@ -26,6 +56,8 @@ nonisolated struct SimulationSnapshot: Equatable, Sendable {
         var height = 0.0
         /// 在第幾件家具上（ADR 0011，例如躺在床上、正在上下床）；在地板上是 nil。
         var support: Int? = nil
+        /// 這隻有的屬性（例如睏意、耐心），依固定的順序；沒有資料的屬性不列。
+        var meters: [Meter] = []
     }
 
     /// 第幾個節拍結束時的樣子。

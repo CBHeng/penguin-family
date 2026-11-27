@@ -72,6 +72,9 @@ struct VectorPackParityTests {
         let activity: SimulationSnapshot.Activity
         if let intent = CharacterBehavior.Intent.playing.first(where: { $0.motionName == sample.motion }) {
             activity = .motion(intent, since: 0)
+        } else if motions.motion(named: sample.motion) != nil {
+            // 點一下的反應（歪頭、嚇一跳、開心哈囉、不耐煩）：動作名稱就是反應的意圖
+            activity = .motion(.react(sample.motion), since: 0)
         } else {
             activity = .moving(try #require(CharacterBehavior.Pace(rawValue: sample.motion)), elapsed: sample.t)
         }

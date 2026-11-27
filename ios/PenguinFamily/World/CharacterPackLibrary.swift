@@ -1,7 +1,7 @@
 import Foundation
 import os
 
-/// 載入好的一隻角色：造型、動作與閒晃，都是牠自己的一份（作者 2026-11-19 決定每隻各自獨立）。
+/// 載入好的一隻角色：造型、動作、閒晃與點一下的反應，都是牠自己的一份（作者 2026-11-19 決定每隻各自獨立）。
 nonisolated struct LoadedCharacter: Sendable {
     /// 角色包的資料夾名稱，可能帶有角色名稱：只在執行時使用、存在手機上，不寫進程式或日誌。
     let id: String
@@ -11,6 +11,8 @@ nonisolated struct LoadedCharacter: Sendable {
     var motions: CharacterMotions? = nil
     /// 閒晃的資料（`wander.json`）；角色包沒帶或壞掉時是 nil，改用 App 裡的預設。
     var wander: WanderConfig? = nil
+    /// 點一下的反應（`interactions.json`，A1 第 14 項）；角色包沒帶或壞掉時是 nil，改用 App 裡的預設。
+    var interactions: InteractionConfig? = nil
 }
 
 /// 名單上的一隻（ADR 0009）：身分、物種，與牠的角色包（沒有或壞掉時是 nil，畫面上是替身）。
@@ -23,7 +25,7 @@ nonisolated struct FamilyMember: Sendable {
 /// 找出 App 裡的角色包，照名單載入一家。
 ///
 /// 一隻的角色包是 `CharacterPacks.bundle/<角色>/` 底下的 `vector.json`（造型，一定要有）、`motion.json`（動作）、
-/// `wander.json`（閒晃），都由私有素材 repo 匯出、不進 git。乾淨 clone 下來沒有角色包，這時一家是預設名單的灰色剪影。
+/// `wander.json`（閒晃）、`interactions.json`（點一下的反應），都由私有素材 repo 匯出、不進 git。乾淨 clone 下來沒有角色包，這時一家是預設名單的灰色剪影。
 /// 角色 id 只從名單與資料夾讀，不寫在程式裡（角色名稱只能出現在私有 repo）。
 nonisolated enum CharacterPackLibrary {
     private static let log = Logger(subsystem: "PenguinFamily", category: "CharacterPack")
@@ -96,7 +98,7 @@ nonisolated enum CharacterPackLibrary {
             .sorted { rank($0) < rank($1) }
     }
 
-    /// 讀一隻的角色包。造型壞掉就丟錯（整個角色包不用）；動作、閒晃沒帶或壞掉時記下來，那一份是 nil，牠照樣上台。
+    /// 讀一隻的角色包。造型壞掉就丟錯（整個角色包不用）；動作、閒晃、點一下的反應沒帶或壞掉時記下來，那一份是 nil，牠照樣上台。
     /// 動作的片段要對得上造型（用到的方向與部件造型裡都有），對不上也當作沒帶。
     static func load(_ pack: URL) throws -> LoadedCharacter {
         let vector = try VectorRig.decode(Data(contentsOf: pack.appending(path: "vector.json")))
@@ -106,7 +108,8 @@ nonisolated enum CharacterPackLibrary {
             motions = nil
         }
         return LoadedCharacter(id: pack.lastPathComponent, vector: vector, motions: motions,
-                               wander: optional(pack, "wander.json", WanderConfig.decode))
+                               wander: optional(pack, "wander.json", WanderConfig.decode),
+                               interactions: optional(pack, "interactions.json", InteractionConfig.decode))
     }
 
     /// 角色包裡可以不帶的檔：沒有是 nil；讀不懂也是 nil，並記下來（錯誤內容可能含角色 id，系統日誌預設遮蔽）。

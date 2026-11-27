@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "reactions": {
+    "facingOwner": [{ "motions": ["tiltLeft", "tiltRight"], "weight": 1 }],
+    "facingAway": [{ "motions": ["startle"], "weight": 1 }]
+  },
+  "greeting": { "motion": "happyHello", "afterHours": 4 },
+  "patience": { "motion": "annoyed", "max": 100, "perTap": 25, "recoverPerSecond": 5, "below": 20 }
+}
