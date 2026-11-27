@@ -4,16 +4,18 @@
 /// 走到交給 `.arrived`；動作要播多久、怎麼走過去由模擬決定，這裡不處理時間，所以可以單獨測試，換畫面技術也能沿用。
 ///
 /// 目前的流程：
-/// - 待機 →（主人點一下）→ 哈囉 →（播完）→ 待機。
+/// - 待機 →（主人點一下）→ 反應 →（播完）→ 待機。反應是動作的名稱（例如哈囉、歪頭、嚇一跳，A1 第 14 項）：
+///   要播哪一個由模擬照這隻的 `InteractionConfig` 挑好，用 `.reactRequested` 送進來；只送 `.ownerTapped` 時是哈囉。
 /// - 待機 →（要牠走去某一格）→ 移動 →（走到）→ 待機。
-/// - 待機 →（要牠站著幾秒）→ 站著 →（站滿）→ 待機；站著時被點就哈囉。
-/// - 移動中被點：當場停下哈囉，播完接著走原本那段路（作者 2026-11-19 決定）。
+/// - 待機 →（要牠站著幾秒）→ 站著 →（站滿）→ 待機；站著時被點就反應。
+/// - 移動中被點：當場停下反應，播完接著走原本那段路（作者 2026-11-19 決定；2026-11-25 起反應依權重）。
 /// - 待機 →（睏了，要牠打瞌睡）→ 坐下 →（播完）→ 坐著打瞌睡 →（睏意降下來）→ 自己醒來站起來 →（播完）→ 待機；
 ///   坐下或打瞌睡時被點：驚醒揉眼睛 →（播完）→ 待機（作者 2026-11-20、11-23 決定）。打瞌睡是循環的動作，不會「播完」。
 /// - 待機 →（走到床邊，要牠上床）→ 上床躺下 →（播完）→ 睡覺 →（睡飽）→ 伸懶腰下床 →（播完）→ 待機；
 ///   睡覺時被點：揉眼睛下床 →（播完）→ 待機（ADR 0011）。走去床邊是一般的移動。睡覺也是循環的動作。
 /// 要牠走去哪、站多久、什麼時候打瞌睡或睡覺由閒晃（`WanderRoutine`）決定，什麼時候醒來由模擬照睏意決定。
-/// 哈囉、自己醒來、驚醒、上床、下床時再點不理（點一下的反應依權重是 A1 第 14 項；上下床作者 2026-11-24 決定）。
+/// 反應、自己醒來、驚醒、上床、下床時再點不理（上下床作者 2026-11-24 決定）。連戳、離開一陣子後的開心哈囉、
+/// 醒來後接著播的反應都由模擬記著，到時候再送 `.reactRequested`，這裡不記。
 ///
 /// 狀態每隻共用、不分物種（作者 2026-11-19 決定；ADR 0009）：每個狀態看起來怎麼動是每隻自己的動作資料
 /// （`CharacterMotions`），什麼時候做什麼是每隻自己的閒晃資料（`WanderConfig`），都放在各自的角色包，這裡不分是哪一隻。
@@ -28,7 +30,8 @@ nonisolated struct CharacterBehavior: Equatable, Sendable {
     /// 角色現在要做的事，模擬照著做。
     enum Intent: Equatable, Sendable {
         case idle
-        case hello
+        /// 被點時的反應：播這個名稱的動作（例如 `hello`、`tiltLeft`、`startle`、`happyHello`、`annoyed`），播完回到原本的事。
+        case react(String)
         /// 走到某一格（沿格線、繞過家具，路由模擬找）。
         case move(to: Tile, pace: Pace)
         /// 站在原地幾秒：發呆、東張西望的一眼、在窗邊看外面、走幾步停一下。
@@ -55,7 +58,7 @@ nonisolated struct CharacterBehavior: Equatable, Sendable {
         /// 角色沒有這個動作時，模擬當作馬上播完。
         var motionName: String? {
             switch self {
-            case .hello: "hello"
+            case .react(let name): name
             case .sitDown: "sitDown"
             case .doze: "doze"
             case .standUp: "standUp"
@@ -68,9 +71,18 @@ nonisolated struct CharacterBehavior: Equatable, Sendable {
             }
         }
 
-        /// 會播動作的意圖（不帶參數的），依動作名稱找意圖用（例如測試拿動作資料比對）。
+        /// 哈囉：最基本的反應（只送 `.ownerTapped`、或角色沒有別的反應時）。
+        static let hello = Intent.react("hello")
+
+        /// 會播動作的意圖（反應只列哈囉），依動作名稱找意圖用（例如測試拿動作資料比對）。
         static let playing: [Intent] = [.hello, .sitDown, .doze, .standUp, .wakeStartled,
                                         .climbIn, .sleep, .wakeTapped, .wakeRested]
+
+        /// 正在播反應。
+        var isReaction: Bool {
+            if case .react = self { return true }
+            return false
+        }
 
         /// 在床上（含上床、下床）。
         var isInBed: Bool { [.climbIn, .sleep, .wakeTapped, .wakeRested].contains(self) }
@@ -78,8 +90,10 @@ nonisolated struct CharacterBehavior: Equatable, Sendable {
 
     /// 會改變行為的事。
     enum Input: Equatable, Sendable {
-        /// 主人點了角色一下。
+        /// 主人點了角色一下：閒著時哈囉，打瞌睡、睡覺時醒來。
         case ownerTapped
+        /// 要牠播這個反應（模擬照 `InteractionConfig` 挑好的；閒著、站著、移動中才接受，其他時候不理）。
+        case reactRequested(String)
         /// 模擬回報播完目前的動作，或站滿了。
         case motionFinished
         /// 要牠走去某一格（由閒晃決定）。
@@ -99,7 +113,7 @@ nonisolated struct CharacterBehavior: Equatable, Sendable {
     }
 
     private(set) var intent: Intent = .idle
-    /// 被點打斷的那段路，哈囉播完後接著走；沒有被打斷時是 nil。
+    /// 被點打斷的那段路，反應播完後接著走；沒有被打斷時是 nil。
     private(set) var interruptedMove: Intent?
 
     /// 處理一個輸入；意圖有改變時回傳 true，被忽略時回傳 false。
@@ -107,10 +121,10 @@ nonisolated struct CharacterBehavior: Equatable, Sendable {
     @discardableResult
     mutating func handle(_ input: Input) -> Bool {
         guard let next = transition(input) else { return false }
-        // 移動被點打斷：記下這段路；哈囉播完、接回去之後就清掉
-        if case .move = intent, next == .hello {
+        // 移動被點打斷：記下這段路；反應播完、接回去之後就清掉
+        if case .move = intent, next.isReaction {
             interruptedMove = intent
-        } else if intent == .hello {
+        } else if intent.isReaction {
             interruptedMove = nil
         }
         intent = next
@@ -123,8 +137,11 @@ nonisolated struct CharacterBehavior: Equatable, Sendable {
         case (.idle, .ownerTapped), (.stand, .ownerTapped), (.move, .ownerTapped):
             // 站著（發呆、東張西望）也算閒著，被點就打招呼；移動中被點當場停下打招呼
             return .hello
-        case (.hello, .motionFinished):
-            // 移動被打斷的話，揮完接著走
+        case (.idle, .reactRequested(let name)), (.stand, .reactRequested(let name)), (.move, .reactRequested(let name)):
+            // 移動中也一樣當場停下來反應
+            return .react(name)
+        case (.react, .motionFinished):
+            // 移動被打斷的話，播完接著走
             return interruptedMove ?? .idle
         case (.stand, .motionFinished):
             return .idle
@@ -156,11 +173,12 @@ nonisolated struct CharacterBehavior: Equatable, Sendable {
             return .wakeRested
         case (.wakeTapped, .motionFinished), (.wakeRested, .motionFinished):
             return .idle
-        case (.hello, .ownerTapped), (.standUp, .ownerTapped), (.wakeStartled, .ownerTapped),
+        case (.react, .ownerTapped), (.standUp, .ownerTapped), (.wakeStartled, .ownerTapped),
              (.climbIn, .ownerTapped), (.wakeTapped, .ownerTapped), (.wakeRested, .ownerTapped):
-            // 播放中再點不重來，播完才能再打招呼
+            // 播放中再點不重來，播完才能再反應（連戳由模擬記著）
             return nil
-        case (_, .moveRequested), (_, .standRequested), (_, .dozeRequested), (_, .dozeEnded), (_, .sleepRequested), (_, .sleepEnded):
+        case (_, .moveRequested), (_, .standRequested), (_, .dozeRequested), (_, .dozeEnded), (_, .sleepRequested), (_, .sleepEnded),
+             (_, .reactRequested):
             // 正在做別的事，做完才接下一件
             return nil
         case (_, .motionFinished), (_, .arrived):

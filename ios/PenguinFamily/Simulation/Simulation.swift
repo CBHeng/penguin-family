@@ -15,7 +15,15 @@ import Foundation
 /// 兩隻互相讓路（作者 2026-11-19 決定）：走路時要走進的下一格被別隻佔住，就停在格子中心等；
 /// 等了一陣子還擋著就找一條繞開牠的路（第一隻等久一點，迎面撞上時第二隻先讓），繞不過去、等太久就停在原地算走到。
 ///
-/// 移動中被點（作者 2026-11-19 決定）：停在當下的位置（可能在兩格之間）哈囉，揮完從停的地方沿格線接著走，不跳回格子中心。
+/// 移動中被點（作者 2026-11-19 決定）：停在當下的位置（可能在兩格之間）反應，播完從停的地方沿格線接著走，不跳回格子中心。
+///
+/// 點一下的反應（A1 第 14 項，作者 2026-11-25～27 決定）：每隻照自己的 `InteractionConfig`，亂數用這裡的。
+/// - 閒著（待機、站著、移動中）被點：背對主人時嚇一跳（耐心已經低於門檻時直接不耐煩）；否則離上一次點這隻滿 `greeting.afterHours`（由外面算好送進來，
+///   這裡不讀時鐘）是開心哈囉，耐心低於門檻是不耐煩，其他看得到臉時歪頭。順序與細節見 `InteractionConfig` 的說明。
+/// - 耐心（`Patience`）：每點一下扣一些、慢慢回升。點下去時已經低於門檻就不耐煩；平常的反應播放中沒有回應的點也扣，
+///   那一下已經低於門檻就等當下的反應播完再不耐煩。
+/// - 打瞌睡、睡覺時被點：照原本的規則醒來；欠著開心哈囉的話，醒來後接著播。
+/// - 沒有回應的點（例如上下床時）不用掉開心哈囉；醒來、開心哈囉、不耐煩時的點不扣耐心。
 ///
 /// 睏意（作者 2026-11-20 決定）：每隻的睏意在這裡（`Sleepiness`，數字在牠的 `wander.json`）。醒著時照在做什麼增加，
 /// 打瞌睡時下降；閒晃挑下一件事時照睏意決定要不要打瞌睡。打瞌睡時算好睏意什麼時候降到 `wakeBelow`，
@@ -39,6 +47,8 @@ nonisolated struct Simulation: Sendable {
         var motions: CharacterMotions = .placeholder
         /// 閒晃的資料；nil 時牠不會自己找事做，只照事件動（資料讀不到時，或測試）。
         var wander: WanderConfig? = nil
+        /// 點一下的反應；nil 時被點只會哈囉（資料讀不到時，或測試）。
+        var interactions: InteractionConfig? = nil
     }
 
     /// 會改變世界的事。
@@ -49,8 +59,9 @@ nonisolated struct Simulation: Sendable {
         case leave(CharacterID)
         /// 把台上的一隻放到某一點（之後的「拎起來」也用它）。正在走、停在半路或在床上時不做事。
         case place(CharacterID, at: TilePosition)
-        /// 主人點了這一隻。`at` 是點的當下，由外面取，只用來記錄。
-        case ownerTapped(CharacterID, at: Date)
+        /// 主人點了這一隻。`at` 是點的當下，由外面取，只用來記錄。`sinceLastTap` 是離上一次點這隻幾秒（真實時間，
+        /// 由外面從事件紀錄算好；從來沒被點過是 `.infinity`），判斷是不是離開一陣子後的第一次點。
+        case ownerTapped(CharacterID, at: Date, sinceLastTap: Double = 0)
         /// 直接交給這一隻的狀態機，例如要牠走去某一格。
         case input(CharacterID, CharacterBehavior.Input)
         /// 台上每一隻的睏意一下子加這麼多（除錯用的「加睏意」按鈕，作者 2026-11-20 要求）。
@@ -99,6 +110,14 @@ nonisolated struct Simulation: Sendable {
         var height = 0.0
         /// 在床上（含上床、下床）時的床位；不在床上是 nil。
         var bed: BedPlace?
+        /// 點一下的反應的資料；nil 時被點只會哈囉。
+        let interactions: InteractionConfig?
+        /// 離開一陣子後還沒回應過：下一次回應是開心哈囉。
+        var owesGreeting = false
+        /// 耐心值；資料沒有 `patience` 時是 nil（不會不耐煩）。
+        var patience: Patience?
+        /// 當下的動作播完後接著播的反應（不耐煩、醒來後的開心哈囉）；沒有是 nil。
+        var pendingReaction: String?
     }
 
     /// 一隻角色佔住的床位（ADR 0011）。
@@ -169,6 +188,11 @@ nonisolated struct Simulation: Sendable {
         characters.first { $0.id == id }?.behavior
     }
 
+    /// 台上某一隻現在的耐心；不在台上或沒有耐心的資料時是 nil。
+    func patience(of id: CharacterID) -> Double? {
+        characters.first { $0.id == id }?.patience?.level(at: time)
+    }
+
     /// 台上某一隻現在的睏意（0～100）；不在台上或沒有睏意的資料時是 nil。
     func sleepiness(of id: CharacterID) -> Double? {
         characters.first { $0.id == id }?.sleepiness?.level(at: time)
@@ -179,7 +203,7 @@ nonisolated struct Simulation: Sendable {
         SimulationSnapshot(tick: tick, characters: characters.map { character in
             SimulationSnapshot.Character(id: character.id, position: character.position, facing: character.facing,
                                          activity: Self.activity(of: character), height: character.height,
-                                         support: character.bed?.slot.furniture)
+                                         support: character.bed?.slot.furniture, meters: Self.meters(of: character))
         }, isActive: isActive, wakeAt: wakeAt)
     }
 
@@ -230,7 +254,7 @@ nonisolated struct Simulation: Sendable {
         for id in finished {
             outputs.append(.finished(id))
             input(id, .motionFinished, now: now)
-            wander(id, now: now)
+            if !playPending(id, now: now) { wander(id, now: now) }
         }
         for arrival in arrived {
             outputs.append(.arrived(arrival.id, arrival.tile))
@@ -255,7 +279,11 @@ nonisolated struct Simulation: Sendable {
             guard index(of: id) == nil, let member = cast.first(where: { $0.id == id }) else { return nil }
             var character = Character(id: id, motions: member.motions,
                                       wander: member.wander.map { WanderRoutine(config: $0, room: room) },
-                                      position: position)
+                                      position: position, interactions: member.interactions)
+            // 耐心：打開 App 時是滿的（不跨次保存）
+            character.patience = member.interactions?.patience.map {
+                Patience(max: $0.max, recoverPerSecond: $0.recoverPerSecond, at: now)
+            }
             if let config = member.wander?.sleepiness {
                 // 打開 App 時從範圍裡隨機開始（不跨次保存）
                 character.sleepiness = Sleepiness(value: Double.random(in: config.start, using: &rng), at: now,
@@ -269,10 +297,10 @@ nonisolated struct Simulation: Sendable {
             guard let index = index(of: id), characters[index].walking == nil, characters[index].midway == nil,
                   characters[index].bed == nil else { return nil }
             characters[index].position = position
-        case .ownerTapped(let id, let date):
+        case .ownerTapped(let id, let date, let sinceLastTap):
             // 主人點了就記下，不論角色當下有沒有回應
             outputs.append(.ownerTapped(id, at: date))
-            input(id, .ownerTapped, now: now)
+            if let index = index(of: id) { tapped(index, sinceLastTap: sinceLastTap, now: now) }
         case .input(let id, let request):
             input(id, request, now: now)
         case .addSleepiness(let amount):
@@ -349,7 +377,7 @@ nonisolated struct Simulation: Sendable {
         characters[index].walking = nil
         characters[index].standUntil = nil
         switch intent {
-        case .idle, .hello, .sitDown, .doze, .standUp, .wakeStartled, .climbIn, .sleep, .wakeTapped, .wakeRested:
+        case .idle, .react, .sitDown, .doze, .standUp, .wakeStartled, .climbIn, .sleep, .wakeTapped, .wakeRested:
             break
         case .stand(let facing, let seconds):
             if let facing { characters[index].facing = facing }
@@ -364,6 +392,71 @@ nonisolated struct Simulation: Sendable {
                                              start: now - walked / speed, distance: walked)
             moveAlong(index, distance: walked)
         }
+    }
+
+    // MARK: - 點一下的反應
+
+    /// 主人點了這一隻（A1 第 14 項，見最上面的說明）。
+    private mutating func tapped(_ index: Int, sinceLastTap: Double, now: Double) {
+        let id = characters[index].id, config = characters[index].interactions, motions = characters[index].motions
+        let has = { (name: String) in motions.motion(named: name) != nil }
+        if let greeting = config?.greeting, has(greeting.motion), sinceLastTap >= greeting.afterSeconds {
+            characters[index].owesGreeting = true
+        }
+        switch characters[index].behavior.intent {
+        case .idle, .stand, .move:
+            if characters[index].facing.facesAway, let name = config?.pickReaction(facingAway: true, has: has, using: &rng) {
+                // 背對嚇一跳（作者 2026-11-27 決定）：照樣扣耐心；點下去時耐心已經低於門檻就直接不耐煩、不嚇一跳。
+                // 開心哈囉都留到下一次
+                if losePatience(index, now: now), let patience = config?.patience {
+                    input(id, .reactRequested(patience.motion), now: now)
+                } else {
+                    input(id, .reactRequested(name), now: now)
+                }
+            } else if characters[index].owesGreeting, let greeting = config?.greeting {
+                characters[index].owesGreeting = false
+                input(id, .reactRequested(greeting.motion), now: now)
+            } else if losePatience(index, now: now), let patience = config?.patience {
+                input(id, .reactRequested(patience.motion), now: now)
+            } else if let name = config?.pickReaction(facingAway: false, has: has, using: &rng) {
+                input(id, .reactRequested(name), now: now)
+            } else {
+                input(id, .ownerTapped, now: now)
+            }
+        case .react(let name):
+            // 開心哈囉、不耐煩時的點不扣；其他反應播放中的點扣耐心，已經低於門檻就等播完再不耐煩
+            guard name != config?.greeting?.motion, name != config?.patience?.motion else { return }
+            if losePatience(index, now: now), let patience = config?.patience {
+                characters[index].pendingReaction = patience.motion
+            }
+        case .sitDown, .doze, .sleep:
+            input(id, .ownerTapped, now: now)
+            if characters[index].owesGreeting, let greeting = config?.greeting {
+                characters[index].owesGreeting = false
+                characters[index].pendingReaction = greeting.motion
+            }
+        case .standUp, .wakeStartled, .climbIn, .wakeTapped, .wakeRested:
+            // 醒來、上下床時不理，也不扣耐心；欠著的開心哈囉留到下一次回應
+            break
+        }
+    }
+
+    /// 被點一下：點下去那一刻耐心已經低於門檻時回傳 true（不耐煩），再照樣扣 `perTap`（一直戳就一直低）。
+    /// 回升到門檻以上，下一次點就恢復平常的反應（作者 2026-11-27 決定）。這隻沒有耐心值、或沒有不耐煩的動作時不扣，回傳 false。
+    private mutating func losePatience(_ index: Int, now: Double) -> Bool {
+        guard let config = characters[index].interactions?.patience, let patience = characters[index].patience,
+              characters[index].motions.motion(named: config.motion) != nil else { return false }
+        let tooLow = patience.level(at: now) < config.below
+        characters[index].patience?.spend(config.perTap, at: now)
+        return tooLow
+    }
+
+    /// 當下的動作播完、回到閒著（或接著走）時，播等著的反應；播了回傳 true（不問閒晃）。
+    private mutating func playPending(_ id: CharacterID, now: Double) -> Bool {
+        guard let index = index(of: id), let name = characters[index].pendingReaction else { return false }
+        characters[index].pendingReaction = nil
+        input(id, .reactRequested(name), now: now)
+        return characters[index].behavior.intent == .react(name)
     }
 
     // MARK: - 床
@@ -632,6 +725,24 @@ nonisolated struct Simulation: Sendable {
             if case .move(let goal, _)? = intent { return goal }
         }
         return Tile(containing: character.position)
+    }
+
+    /// 快照裡的屬性（給介面的屬性條，作者 2026-11-27 要求）：這隻有資料的才列，門檻從牠自己的資料讀。
+    /// 加新的屬性時加在這裡，介面不用改。
+    private static func meters(of character: Character) -> [SimulationSnapshot.Meter] {
+        var meters: [SimulationSnapshot.Meter] = []
+        if let sleepiness = character.sleepiness, let config = character.wander?.config.sleepiness {
+            let marks = [SimulationSnapshot.Meter.Mark(value: config.doze.above, label: "打瞌睡")]
+                + (config.sleep.map { [.init(value: $0.above, label: "睡覺")] } ?? [])
+            meters.append(.init(id: "sleepiness", label: "睏意", range: Sleepiness.range, value: sleepiness.value,
+                                since: sleepiness.since, perSecond: sleepiness.perSecond, marks: marks))
+        }
+        if let patience = character.patience, let config = character.interactions?.patience {
+            meters.append(.init(id: "patience", label: "耐心", range: 0...patience.max, value: patience.value,
+                                since: patience.since, perSecond: patience.recoverPerSecond,
+                                marks: [.init(value: config.below, label: "不耐煩")]))
+        }
+        return meters
     }
 
     /// 快照裡的「在做什麼」：正在播的動作優先；移動中等別隻讓路時算站著（站姿）。

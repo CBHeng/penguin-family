@@ -72,6 +72,9 @@ nonisolated final class SimulationRunner: @unchecked Sendable {
     /// 還有東西在動、或有事件還沒處理：遊戲迴圈要繼續。
     var isActive: Bool { shared.withLock { $0.latest.current.isActive || !$0.inbox.isEmpty } }
 
+    /// 真實時間 `now` 對到的模擬時間（屬性條用來往前推算睏意、耐心）。
+    func simulationTime(at now: Double) -> Double { now - latest.epoch }
+
     /// 真實時間 `now` 要畫的模擬時間：比現在晚一個節拍。
     func renderTime(at now: Double) -> Double { now - latest.epoch - Self.secondsPerTick }
 

@@ -56,6 +56,26 @@ actor EventLog {
         }
     }
 
+    /// 每隻最後一次被主人點的時間（不論牠當時有沒有回應）；從來沒被點過的不在裡面。
+    /// 打開 App 時讀一次，判斷離開一陣子後的第一次點（A1 第 14 項）。讀不到時記下來，當作沒被點過。
+    func lastTaps(of characterIDs: [String]) -> [String: Date] {
+        let kind = EventKind.ownerTapped.rawValue
+        var found: [String: Date] = [:]
+        for id in characterIDs {
+            let target: String? = id
+            var descriptor = FetchDescriptor<EventRecord>(
+                predicate: #Predicate { $0.kindRawValue == kind && $0.penguinID == target },
+                sortBy: [SortDescriptor(\.occurredAt, order: .reverse)])
+            descriptor.fetchLimit = 1
+            do {
+                if let last = try modelContext.fetch(descriptor).first { found[id] = last.occurredAt }
+            } catch {
+                Self.log.error("讀最後一次點擊失敗：\(String(describing: error), privacy: .private)")
+            }
+        }
+        return found
+    }
+
     /// 測試用：確認寫入不在主執行緒上做。
     func isRunningOnMainThread() -> Bool { Thread.isMainThread }
 }

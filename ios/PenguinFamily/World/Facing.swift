@@ -15,4 +15,7 @@ nonisolated enum Facing: String, CaseIterable, Sendable, Decodable {
 
     /// 斜向四個方向。
     static let oblique: [Facing] = [.frontLeft, .backLeft, .frontRight, .backRight]
+
+    /// 背對主人（看不到臉）：左後、右後。點一下時背對的一律嚇一跳（作者 2026-11-27 決定）。
+    var facesAway: Bool { self == .backLeft || self == .backRight }
 }
